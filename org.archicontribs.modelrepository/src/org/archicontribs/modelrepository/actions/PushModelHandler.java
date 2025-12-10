@@ -10,6 +10,7 @@ import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.ui.handlers.HandlerUtil;
 
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.util.Logger;
 
 
 /**
@@ -21,12 +22,19 @@ public class PushModelHandler extends AbstractModelHandler {
     
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
+    	// Manifest DEBUG
+        long timeStart = System.currentTimeMillis();
+        
         IArchimateModel model = getActiveArchimateModel();
         
         if(model != null) {
             PushModelAction action = new PushModelAction(HandlerUtil.getActiveWorkbenchWindowChecked(event), model);
             action.run();
         }
+        
+    	// Manifest DEBUG
+        long timeEnd = System.currentTimeMillis();
+        Logger.logInfo("Total Publish Time: " + (timeEnd-timeStart) + "ms");
         
         return null;
     }
