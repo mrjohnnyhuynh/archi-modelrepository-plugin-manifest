@@ -5,15 +5,24 @@
  */
 package org.archicontribs.modelrepository.grafico;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
@@ -28,6 +37,7 @@ import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.resource.Resource;
 import org.eclipse.emf.ecore.resource.ResourceSet;
+import org.eclipse.emf.ecore.resource.URIConverter;
 import org.eclipse.emf.ecore.resource.impl.ExtensibleURIConverterImpl;
 import org.eclipse.emf.ecore.resource.impl.ResourceSetImpl;
 import org.eclipse.emf.ecore.util.EcoreUtil;
@@ -42,6 +52,7 @@ import com.archimatetool.model.IDiagramModelImageProvider;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.IFolderContainer;
 import com.archimatetool.model.IIdentifier;
+import com.archimatetool.model.util.Logger;
 
 
 /**
@@ -80,6 +91,14 @@ public class GraficoModelExporter {
      */
     private File fLocalRepoFolder;
     
+    // Manifest data structures
+    private static final String MANIFEST_NAME = ".grafico_manifest";
+    Map<String,String> oldManifest;
+    Map<String,String> newManifest;
+    Map<Resource,Boolean> exportMap;
+    private int skipped = 0;
+    private int exported = 0;
+    
 	/**
 	 * @param model The model to export
 	 * @param folder The root folder in which to write the grafico XML files
@@ -101,12 +120,19 @@ public class GraficoModelExporter {
      * @throws IOException
      */
     public void exportModel() throws IOException {
-        // Define target folders for model and images
-        // Delete them and re-create them (remark: FileUtils.deleteFolder() does sanity checks)
-        File modelFolder = new File(fLocalRepoFolder, IGraficoConstants.MODEL_FOLDER);
-        FileUtils.deleteFolder(modelFolder);
-        modelFolder.mkdirs();
 
+    	// Manifest DEBUG
+        long timeStart = System.currentTimeMillis();
+
+        // Define target folders for model and images
+        File modelFolder = new File(fLocalRepoFolder, IGraficoConstants.MODEL_FOLDER);
+        
+        // DO NOT delete the model; only regenerate based on manifest 
+        oldManifest = loadManifest(modelFolder);
+        newManifest = new HashMap<>();
+        exportMap = new HashMap<>();
+
+        // Delete images and re-create them (remark: FileUtils.deleteFolder() does sanity checks)
         File imagesFolder = new File(fLocalRepoFolder, IGraficoConstants.IMAGES_FOLDER);
         FileUtils.deleteFolder(imagesFolder);
         imagesFolder.mkdirs();
@@ -126,6 +152,34 @@ public class GraficoModelExporter {
         // Create directory structure and prepare all Resources
         createAndSaveResourceForFolder(copy, modelFolder);
 
+        // To support the manifest: serialize the EMF to memory to compute hashes and build the exportMap
+        Path modelPath = modelFolder.toPath();
+        URIConverter converter = fResourceSet.getURIConverter(); 
+        for (Resource resource : fResourceSet.getResources()) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            resource.save(baos, null);
+            byte[] data = baos.toByteArray();
+            String newHash = md5(data);
+
+            // Compute relative path (for the manifest key)
+            Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
+            if (!filePath.isAbsolute()) {
+                filePath = modelFolder.toPath().resolve(filePath).normalize();
+            }
+            Path relPath = modelPath.relativize(filePath);
+            String relString = relPath.toString().replace(File.separatorChar, '/');
+            
+            newManifest.put(relString, newHash);
+
+            // Compare with old manifest; if same, return
+            String oldHash = oldManifest.get(relString);
+            boolean changed = !newHash.equals(oldHash);
+            exportMap.put(resource, changed);
+            
+            // Manifest DEBUG
+            if (changed) { exported++; } else { skipped++; }
+        }
+               
         // Now save all Resources
         int maxThreads = ModelRepositoryPlugin.getInstance().getPreferenceStore().getInt(IPreferenceConstants.PREFS_EXPORT_MAX_THREADS);
         JobGroup jobgroup = new JobGroup("GraficoModelExporter", maxThreads, 1); //$NON-NLS-1$
@@ -133,6 +187,11 @@ public class GraficoModelExporter {
         final ExceptionProgressMonitor pm = new ExceptionProgressMonitor();
         
         for(Resource resource : fResourceSet.getResources()) {
+        	// DO NOT SAVE if this resource is NOT in the exportMap 
+        	if (!exportMap.getOrDefault(resource, true)) {
+                continue;
+            }
+
             Job job = new Job("Resource Save Job") { //$NON-NLS-1$
                 @Override
                 protected IStatus run(IProgressMonitor monitor) {
@@ -156,7 +215,26 @@ public class GraficoModelExporter {
         catch(OperationCanceledException | InterruptedException ex) {
             ex.printStackTrace();
         }
-        
+
+        // JNH delete files no longer present
+        int deleted = 0;
+        for (String oldFile : oldManifest.keySet()) {
+            if (!newManifest.containsKey(oldFile)) {
+                File f = new File(modelFolder, oldFile);
+                if (f.exists()) {
+                	deleted++;
+                    f.delete();
+                }
+            }
+        }
+
+        // Manifest DEBUG
+        long timeEnd = System.currentTimeMillis();
+        Logger.logInfo("Exported " + exported + " Skipped " + skipped + " Deleted " + deleted + " in " + (timeEnd-timeStart) + "ms");
+
+        // save new manifest
+        saveManifest(modelFolder, newManifest);
+
         // Throw on any exception
         if(pm.ex != null) {
             throw pm.ex;
@@ -248,7 +326,7 @@ public class GraficoModelExporter {
         // Add the object to the resource
         resource.getContents().add(object);
     }
-    
+
     /**
      * Extract and save images used inside a model as separate image files
      */
@@ -279,4 +357,59 @@ public class GraficoModelExporter {
             }
         }
     }
+    
+    /**
+     * Load the export manifest file
+     * 
+     * @param modelFolder model folder containing the manifest
+     * @throws IOException
+     */
+    private Map<String,String> loadManifest(File modelFolder) throws IOException {
+        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        Map<String,String> manifest = new HashMap<>();
+        if (manifestFile.exists()) {
+            for (String line : Files.readAllLines(manifestFile.toPath())) {
+                String[] kv = line.split("=", 2);
+                if (kv.length == 2) {
+                    // Store the key exactly as written (relative path)
+                    manifest.put(kv[0], kv[1]);
+                }
+            }
+        }
+        Logger.logInfo("Loaded manifest: " + manifest.size());
+        return manifest;
+    }
+
+    /**
+     * Save the export manifest file
+     * 
+     * @param modelFolder model folder where to store the manifest
+     * @param manifest map of file-hash key-value pairs
+     * @throws IOException
+     */    
+    private void saveManifest(File modelFolder, Map<String,String> manifest) throws IOException {
+        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        Map<String,String> sorted = new TreeMap<>(manifest);
+        List<String> lines = sorted.entrySet().stream()
+            .map(e -> e.getKey() + "=" + e.getValue())
+            .toList();
+        Files.write(manifestFile.toPath(), lines);
+        Logger.logInfo("Saved manifest: " + sorted.size());
+    }
+
+    /**
+     * Generate MD5 hash
+     * 
+     * @param data array of bytes to generate an MD5 hash
+     * @return
+     */
+    private String md5(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            return HexFormat.of().formatHex(md.digest(data)).toUpperCase();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 }
