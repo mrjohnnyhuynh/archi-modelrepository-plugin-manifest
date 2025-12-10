@@ -10,6 +10,7 @@ import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.ui.handlers.HandlerUtil;
 
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.util.Logger;
 
 
 /**
@@ -21,6 +22,9 @@ public class CommitModelHandler extends AbstractModelHandler {
     
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
+    	// Manifest DEBUG
+        long timeStart = System.currentTimeMillis();
+
         IArchimateModel model = getActiveArchimateModel();
         
         if(model != null) {
@@ -28,6 +32,10 @@ public class CommitModelHandler extends AbstractModelHandler {
             action.run();
         }
         
+    	// Manifest DEBUG
+        long timeEnd = System.currentTimeMillis();
+        Logger.logInfo("Total Commit Time: " + (timeEnd-timeStart) + "ms");
+
         return null;
     }
     
