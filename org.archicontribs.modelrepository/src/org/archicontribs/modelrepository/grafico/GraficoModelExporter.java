@@ -25,14 +25,14 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.archicontribs.modelrepository.ModelRepositoryPlugin;
-import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
-import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.IStatus;
+//import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
+//import org.eclipse.core.runtime.IProgressMonitor;
+//import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.OperationCanceledException;
-import org.eclipse.core.runtime.Status;
-import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.core.runtime.jobs.JobGroup;
+//import org.eclipse.core.runtime.OperationCanceledException;
+//import org.eclipse.core.runtime.Status;
+//import org.eclipse.core.runtime.jobs.Job;
+//import org.eclipse.core.runtime.jobs.JobGroup;
 import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.resource.Resource;
@@ -98,6 +98,16 @@ public class GraficoModelExporter {
     Map<Resource,Boolean> exportMap;
     private int skipped = 0;
     private int exported = 0;
+    private final Set<Path> writtenFiles = new HashSet<>();
+    private final Set<Path> deletedFiles = new HashSet<>();
+
+    public Set<Path> getWrittenFiles() {
+        return writtenFiles;
+    }
+
+    public Set<Path> getDeletedFiles() {
+        return deletedFiles;
+    }
     
 	/**
 	 * @param model The model to export
@@ -181,8 +191,11 @@ public class GraficoModelExporter {
         }
                
         // Now save all Resources
+        // JNH TODO delete
+        /*
         int maxThreads = ModelRepositoryPlugin.getInstance().getPreferenceStore().getInt(IPreferenceConstants.PREFS_EXPORT_MAX_THREADS);
         JobGroup jobgroup = new JobGroup("GraficoModelExporter", maxThreads, 1); //$NON-NLS-1$
+        */
         
         final ExceptionProgressMonitor pm = new ExceptionProgressMonitor();
         
@@ -192,6 +205,22 @@ public class GraficoModelExporter {
                 continue;
             }
 
+        	try {
+                resource.save(null);
+                
+                // Get the resource path and add to writtenFiles 
+                Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
+                if (!filePath.isAbsolute()) {
+                    filePath = modelFolder.toPath().resolve(filePath).normalize();
+                }
+                writtenFiles.add(filePath);
+            }
+            catch(IOException ex) {
+                pm.catchException(ex);
+            }
+        	
+        	// JNH TODO: Remove this... not necessary now that we are smart about writing files
+        	/*
             Job job = new Job("Resource Save Job") { //$NON-NLS-1$
                 @Override
                 protected IStatus run(IProgressMonitor monitor) {
@@ -207,14 +236,18 @@ public class GraficoModelExporter {
             
             job.setJobGroup(jobgroup);
             job.schedule();
+            */
         }
         
+        // JNH TODO Delete
+        /*
         try {
             jobgroup.join(0, pm);
         }
         catch(OperationCanceledException | InterruptedException ex) {
             ex.printStackTrace();
         }
+        */
 
         // JNH delete files no longer present
         int deleted = 0;
@@ -223,6 +256,7 @@ public class GraficoModelExporter {
                 File f = new File(modelFolder, oldFile);
                 if (f.exists()) {
                 	deleted++;
+                	deletedFiles.add(f.toPath());
                     f.delete();
                 }
             }
@@ -376,7 +410,7 @@ public class GraficoModelExporter {
      * @throws IOException
      */
     private Map<String,String> loadManifest(File modelFolder) throws IOException {
-        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        File manifestFile = new File(modelFolder, MANIFEST_NAME);
         Map<String,String> manifest = new HashMap<>();
         if (manifestFile.exists()) {
             for (String line : Files.readAllLines(manifestFile.toPath())) {
@@ -399,7 +433,7 @@ public class GraficoModelExporter {
      * @throws IOException
      */    
     private void saveManifest(File modelFolder, Map<String,String> manifest) throws IOException {
-        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        File manifestFile = new File(modelFolder, MANIFEST_NAME);
         Map<String,String> sorted = new TreeMap<>(manifest);
         List<String> lines = sorted.entrySet().stream()
             .map(e -> e.getKey() + "=" + e.getValue())
