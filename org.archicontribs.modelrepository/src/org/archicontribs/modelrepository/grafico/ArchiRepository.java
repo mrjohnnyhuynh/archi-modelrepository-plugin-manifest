@@ -13,11 +13,13 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.archicontribs.modelrepository.authentication.CredentialsAuthenticator;
@@ -37,6 +39,7 @@ import org.eclipse.jgit.api.PushCommand;
 import org.eclipse.jgit.api.RemoteAddCommand;
 import org.eclipse.jgit.api.ResetCommand;
 import org.eclipse.jgit.api.ResetCommand.ResetType;
+import org.eclipse.jgit.api.RmCommand;
 import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.ConfigInvalidException;
@@ -382,16 +385,42 @@ public class ArchiRepository implements IArchiRepository {
                         GraficoModelExporter exporter = new GraficoModelExporter(model, getLocalRepositoryFolder());
                         exporter.exportModel();
                         
+                        // JNH Get the written and deleted files during the export
+                        Set<Path> writtenFiles = exporter.getWrittenFiles();
+                        Set<Path> deletedFiles = exporter.getDeletedFiles();
+                        
                         // Check lock file is deleted
                         checkDeleteLockFile();
                         
                         // Stage modified files to index - this can take a long time!
                         // This will clear any different line endings and calls to git.status() will be faster
+                        Path repoRoot = getLocalRepositoryFolder().toPath();
                         try(Git git = Git.open(getLocalRepositoryFolder())) {
-                            AddCommand addCommand = git.add();
-                            addCommand.addFilepattern(".");
-                            addCommand.setUpdate(false);
-                            addCommand.call();
+                            //AddCommand addCommand = git.add();
+                            //addCommand.addFilepattern(".");
+                            //addCommand.setUpdate(false);
+
+                        	// JNH stage adds
+                            if (!writtenFiles.isEmpty()) {
+                            	AddCommand addCommand = git.add();
+	                            for (Path p : writtenFiles) {
+	                                String rel = repoRoot.relativize(p).toString();
+	                                addCommand.addFilepattern(rel);
+	                            }
+	                            addCommand.call();
+                            }
+                            
+                            // JNH stage deletes
+                            if (!deletedFiles.isEmpty()) {
+	                            RmCommand rmCommand = git.rm();
+	                            for (Path p : deletedFiles) {
+	                                String rel = repoRoot.relativize(p).toString();
+	                                rmCommand.addFilepattern(rel);
+	                            }
+	                            rmCommand.call();
+                            }
+                         
+                            
                         }
                     }
                     catch(IOException | GitAPIException ex) {
