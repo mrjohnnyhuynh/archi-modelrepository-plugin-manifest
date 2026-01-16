@@ -25,14 +25,14 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.archicontribs.modelrepository.ModelRepositoryPlugin;
-//import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
-//import org.eclipse.core.runtime.IProgressMonitor;
-//import org.eclipse.core.runtime.IStatus;
+import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
-//import org.eclipse.core.runtime.OperationCanceledException;
-//import org.eclipse.core.runtime.Status;
-//import org.eclipse.core.runtime.jobs.Job;
-//import org.eclipse.core.runtime.jobs.JobGroup;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobGroup;
 import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.resource.Resource;
@@ -95,7 +95,7 @@ public class GraficoModelExporter {
     private static final String MANIFEST_NAME = ".grafico_manifest";
     Map<String,String> oldManifest;
     Map<String,String> newManifest;
-    Map<Resource,Boolean> exportMap;
+    Set<Resource> exportSet;
     private int skipped = 0;
     private int exported = 0;
     private final Set<Path> writtenFiles = new HashSet<>();
@@ -140,7 +140,7 @@ public class GraficoModelExporter {
         // DO NOT delete the model; only regenerate based on manifest 
         oldManifest = loadManifest(modelFolder);
         newManifest = new HashMap<>();
-        exportMap = new HashMap<>();
+        exportSet = new HashSet<>();
 
         // Delete images and re-create them (remark: FileUtils.deleteFolder() does sanity checks)
         File imagesFolder = new File(fLocalRepoFolder, IGraficoConstants.IMAGES_FOLDER);
@@ -162,7 +162,7 @@ public class GraficoModelExporter {
         // Create directory structure and prepare all Resources
         createAndSaveResourceForFolder(copy, modelFolder);
 
-        // To support the manifest: serialize the EMF to memory to compute hashes and build the exportMap
+        // To support the manifest: serialize the EMF to memory to compute hashes and build the exportSet
         Path modelPath = modelFolder.toPath();
         URIConverter converter = fResourceSet.getURIConverter(); 
         for (Resource resource : fResourceSet.getResources()) {
@@ -181,46 +181,38 @@ public class GraficoModelExporter {
             
             newManifest.put(relString, newHash);
 
-            // Compare with old manifest; if same, return
+            // Compare with old manifest; if different, add to the exportSet
             String oldHash = oldManifest.get(relString);
-            boolean changed = !newHash.equals(oldHash);
-            exportMap.put(resource, changed);
+            if ( ! newHash.equals(oldHash) ) { 
+            	exportSet.add(resource);
+            	exported++;
+            } else {
+            	skipped++;
+            }
             
-            // Manifest DEBUG
-            if (changed) { exported++; } else { skipped++; }
         }
                
         // Now save all Resources
-        // JNH TODO delete
-        /*
         int maxThreads = ModelRepositoryPlugin.getInstance().getPreferenceStore().getInt(IPreferenceConstants.PREFS_EXPORT_MAX_THREADS);
         JobGroup jobgroup = new JobGroup("GraficoModelExporter", maxThreads, 1); //$NON-NLS-1$
-        */
         
         final ExceptionProgressMonitor pm = new ExceptionProgressMonitor();
         
         for(Resource resource : fResourceSet.getResources()) {
-        	// DO NOT SAVE if this resource is NOT in the exportMap 
-        	if (!exportMap.getOrDefault(resource, true)) {
-                continue;
-            }
-
-        	try {
-                resource.save(null);
-                
-                // Get the resource path and add to writtenFiles 
-                Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
-                if (!filePath.isAbsolute()) {
-                    filePath = modelFolder.toPath().resolve(filePath).normalize();
-                }
-                writtenFiles.add(filePath);
-            }
-            catch(IOException ex) {
-                pm.catchException(ex);
-            }
         	
-        	// JNH TODO: Remove this... not necessary now that we are smart about writing files
-        	/*
+        	// Skip if this resource is NOT in the export set
+        	if ( ! exportSet.contains(resource) ) {
+        		continue;
+        	}
+
+            // Get the resource path and add to writtenFiles 
+        	Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
+            if (!filePath.isAbsolute()) {
+                filePath = modelFolder.toPath().resolve(filePath).normalize();
+            }
+            writtenFiles.add(filePath);
+        	
+        	// JNH TODO: consider only using a job if our exportSet is small.
             Job job = new Job("Resource Save Job") { //$NON-NLS-1$
                 @Override
                 protected IStatus run(IProgressMonitor monitor) {
@@ -236,20 +228,17 @@ public class GraficoModelExporter {
             
             job.setJobGroup(jobgroup);
             job.schedule();
-            */
+
         }
         
-        // JNH TODO Delete
-        /*
         try {
             jobgroup.join(0, pm);
         }
         catch(OperationCanceledException | InterruptedException ex) {
             ex.printStackTrace();
         }
-        */
 
-        // JNH delete files no longer present
+        // delete files no longer present
         int deleted = 0;
         for (String oldFile : oldManifest.keySet()) {
             if (!newManifest.containsKey(oldFile)) {
@@ -421,7 +410,7 @@ public class GraficoModelExporter {
                 }
             }
         }
-        Logger.logInfo("Loaded manifest: " + manifest.size());
+        Logger.logInfo("Loaded manifest: " + manifest.size() + " items");
         return manifest;
     }
 
@@ -439,7 +428,7 @@ public class GraficoModelExporter {
             .map(e -> e.getKey() + "=" + e.getValue())
             .toList();
         Files.write(manifestFile.toPath(), lines);
-        Logger.logInfo("Saved manifest: " + sorted.size());
+        Logger.logInfo("Saved manifest: " + sorted.size() + " items");
     }
 
     /**
