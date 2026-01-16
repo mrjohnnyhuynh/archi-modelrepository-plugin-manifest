@@ -66,6 +66,7 @@ import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.editor.utils.PlatformUtils;
 import com.archimatetool.editor.utils.StringUtils;
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.util.Logger;
 
 /**
  * Representation of a local repository
@@ -400,6 +401,8 @@ public class ArchiRepository implements IArchiRepository {
                             //addCommand.addFilepattern(".");
                             //addCommand.setUpdate(false);
 
+                        	long gitStart = System.currentTimeMillis();
+
                         	// JNH stage adds
                             if (!writtenFiles.isEmpty()) {
                             	AddCommand addCommand = git.add();
@@ -419,8 +422,9 @@ public class ArchiRepository implements IArchiRepository {
 	                            }
 	                            rmCommand.call();
                             }
-                         
                             
+                            long gitEnd = System.currentTimeMillis();
+                            Logger.logInfo("Git Add: " + writtenFiles.size() + " Remove: " + deletedFiles.size() + " Time: " + (gitEnd-gitStart) + "ms");                            
                         }
                     }
                     catch(IOException | GitAPIException ex) {
