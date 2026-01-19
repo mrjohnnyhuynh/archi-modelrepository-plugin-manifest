@@ -386,24 +386,19 @@ public class ArchiRepository implements IArchiRepository {
                         GraficoModelExporter exporter = new GraficoModelExporter(model, getLocalRepositoryFolder());
                         exporter.exportModel();
                         
-                        // JNH Get the written and deleted files during the export
+                        // Get the written and deleted files during the export
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
                         
                         // Check lock file is deleted
                         checkDeleteLockFile();
                         
-                        // Stage modified files to index - this can take a long time!
-                        // This will clear any different line endings and calls to git.status() will be faster
+                        // Use the file list from the export to stage modified files to index 
                         Path repoRoot = getLocalRepositoryFolder().toPath();
                         try(Git git = Git.open(getLocalRepositoryFolder())) {
-                            //AddCommand addCommand = git.add();
-                            //addCommand.addFilepattern(".");
-                            //addCommand.setUpdate(false);
-
                         	long gitStart = System.currentTimeMillis();
 
-                        	// JNH stage adds
+                        	// Git: stage added files
                             if (!writtenFiles.isEmpty()) {
                             	AddCommand addCommand = git.add();
 	                            for (Path p : writtenFiles) {
@@ -413,7 +408,7 @@ public class ArchiRepository implements IArchiRepository {
 	                            addCommand.call();
                             }
                             
-                            // JNH stage deletes
+                            // Git: stage deleted files
                             if (!deletedFiles.isEmpty()) {
 	                            RmCommand rmCommand = git.rm();
 	                            for (Path p : deletedFiles) {

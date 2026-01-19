@@ -199,20 +199,22 @@ public class GraficoModelExporter {
         final ExceptionProgressMonitor pm = new ExceptionProgressMonitor();
         
         for(Resource resource : fResourceSet.getResources()) {
-        	
-        	// Skip if this resource is NOT in the export set
-        	if ( ! exportSet.contains(resource) ) {
-        		continue;
-        	}
 
-            // Get the resource path and add to writtenFiles 
+            // Maintain the files actually written
+            // It *should* be done after skipping non-exported files
+        	// TODO: But for now, we will include all files to be safe -- the extra time savings would be small anyways
         	Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
             if (!filePath.isAbsolute()) {
                 filePath = modelFolder.toPath().resolve(filePath).normalize();
             }
             writtenFiles.add(filePath);
+            
+        	// Skip if this resource is NOT in the export set
+        	if ( ! exportSet.contains(resource) ) {
+        		continue;
+        	}
         	
-        	// JNH TODO: consider only using a job if our exportSet is small.
+        	// TODO: consider only using a job if our exportSet is small.
             Job job = new Job("Resource Save Job") { //$NON-NLS-1$
                 @Override
                 protected IStatus run(IProgressMonitor monitor) {
