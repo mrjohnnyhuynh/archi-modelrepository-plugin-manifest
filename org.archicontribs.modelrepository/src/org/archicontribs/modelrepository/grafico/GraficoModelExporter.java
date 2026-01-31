@@ -240,6 +240,24 @@ public class GraficoModelExporter {
             ex.printStackTrace();
         }
 
+        // TODO / BUG
+        // If the manifest is empty, there could be deleted files that we don't catch here.
+        // treat the filesystem as the "old manifest" in that case.
+        // NOTE: in normal workflows, this shouldn't happen, because the commit would have created a manifest.
+        if (oldManifest.isEmpty()) {
+			Files.walk(modelPath)
+			.filter(Files::isRegularFile)
+			.forEach( p -> {
+				Path relPath = modelPath.relativize(p);
+				String relString = relPath.toString().replace(File.separatorChar, '/');
+				if ( ! newManifest.containsKey(relString) ) {
+					File f = p.toFile();
+					f.delete();
+					deletedFiles.add(f.toPath());
+				}
+			});
+		}
+        
         // delete files no longer present
         int deleted = 0;
         for (String oldFile : oldManifest.keySet()) {
@@ -247,9 +265,10 @@ public class GraficoModelExporter {
                 File f = new File(modelFolder, oldFile);
                 if (f.exists()) {
                 	deleted++;
-                	deletedFiles.add(f.toPath());
                     f.delete();
                 }
+                // Maintain the list of deleted files
+            	deletedFiles.add(f.toPath());
             }
         }
 
