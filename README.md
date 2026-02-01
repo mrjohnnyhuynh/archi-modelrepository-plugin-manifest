@@ -1,24 +1,19 @@
-﻿![archi-model-repository](https://user-images.githubusercontent.com/600504/27026905-4e29ff4e-4f57-11e7-84aa-b840aaa2a4b3.png)
-
-# Archi Model Repository Plug-in
+# Archi Model Repository Plug-in - Manifest Fork
 
 ## What is this?
-This is an extension to Archi that allows collaborative work on Archi through sharing and versioning of models in a Repository. It's a work in progress. It is based on the [Grafico format](https://github.com/archi-contribs/archi-grafico-plugin/wiki/GRAFICO-explained) but hides all the Git complexity.
+This is a fork of [coArchi](https://github.com/archimatetool/archi-modelrepository-plugin/) to address performance issues in very large models (i.e. ~100K elements).
 
-## How to use it
-You can download the latest binary release on the Archi Plug-ins page [here](https://www.archimatetool.com/plugins). Follow the instructions there on how to install it and get started.
+In very large models, here are some areas that cause significant performance issues:
+1. On every action (commit, refresh, publish), the model repository is deleted and exported. This fork generates a manifest of md5 hashes for every element it is about to export. The element is only exported if the hash is different (or does not exist). Elements that are in the manifest, but no longer in the current export are deleted on disk.
+2. After exporting, the equivalent of "git add ." is called. For a repository with many elements, this can take quite a while compared to explicitly doing a "git add" or "git remove" on each item. This fork can use the manifest above to more efficiently stage the changes.
+3. After a git fetch/pull, the XML on disk needs to be loaded back into the model. Instead of blindly reloading every element, this fork aims to selectively reload/unload only the XML files that have changed.
 
-## Roadmap
-There is no formal roadmap for the moment, development is done through sprints that try to gradually improve the overall value of this plugin. Focus if currently on user experience and more features (like branches managemnet) will come after.
+## Roadmap / Status
+1. Basic manifest completed
+2. smarter git staging completed
+3. selective EMF reload - in progress
 
-Here is a basic vision and principles guiding the work:
-![architeamworkvision](https://cloud.githubusercontent.com/assets/5757396/25773905/66ecf38a-3286-11e7-807a-1be70e509a32.jpg)
-
-## Contributing code to Archi and Plug-ins
-
-Please see [How can I contribute code to Archi?](https://github.com/Phillipus/archi/wiki/How-can-I-contribute-code-to-Archi%3F) for general guidance on how to contribute code to Archi and its plug-ins.
-
-## Archi
+## About Archi
 Archi® is a free, open source, cross-platform tool and editor to create ArchiMate models.
 
 The Archi® modelling tool is targeted toward all levels of Enterprise Architects and Modellers. It provides a low cost to entry solution to users who may be making their first steps in the ArchiMate modelling language, or who are looking for a free, cross-platform ArchiMate modelling tool for their company or institution and wish to engage with the language within a TOGAF® or other Enterprise Architecture framework.
