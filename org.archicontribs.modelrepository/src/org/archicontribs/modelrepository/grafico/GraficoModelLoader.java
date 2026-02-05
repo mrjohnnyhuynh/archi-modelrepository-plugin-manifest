@@ -9,12 +9,19 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.archicontribs.modelrepository.grafico.GraficoModelImporter.UnresolvedObject;
+import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.resource.Resource;
+import org.eclipse.emf.ecore.resource.ResourceSet;
 import org.eclipse.emf.ecore.util.EcoreUtil;
+import org.eclipse.emf.ecore.xmi.impl.XMLResourceFactoryImpl;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
@@ -34,10 +41,12 @@ import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.editor.ui.services.EditorManager;
 import com.archimatetool.editor.utils.StringUtils;
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.IArchimatePackage;
 import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IIdentifier;
 import com.archimatetool.model.INameable;
 import com.archimatetool.model.util.ArchimateModelUtils;
+import com.archimatetool.model.util.Logger;
 
 /**
  * Import a model from Grafico files and handle conflicts, re-opening diagrams and status
@@ -108,6 +117,73 @@ public class GraficoModelLoader {
         }
         
         return graficoModel[0];
+    }
+    
+    
+    /**
+     * Re-Load the existing model, using only changed XML files
+     * @return
+     * @throws IOException
+     */
+    public IArchimateModel reloadModel(Set<String> changedXmlFiles) throws IOException {
+    	
+    	// reload using the current model
+        IArchimateModel model = fRepository.locateModel();
+        File fFolder = fRepository.getLocalRepositoryFolder();
+        
+        // Get the model's ResourceSet
+        ResourceSet fResourceSet = model.eResource().getResourceSet();
+        fResourceSet.getResourceFactoryRegistry().getExtensionToFactoryMap().put("*", new XMLResourceFactoryImpl()); //$NON-NLS-1$
+        fResourceSet.getPackageRegistry().put(IArchimatePackage.eNS_URI, IArchimatePackage.eINSTANCE);
+        
+        // Build a map of IDs to Resources for quick lookup
+        Map<String, Resource> idToResourceMap = new HashMap<>();
+        for (Resource resource : fResourceSet.getResources()) {
+            for (EObject eObject : resource.getContents()) {
+                if (eObject instanceof IIdentifier) {
+                    String id = ((IIdentifier) eObject).getId();
+                    idToResourceMap.put(id, resource);
+                }
+            }
+        }
+        
+        // iterate all changed XML files and reload them
+        for (String xmlFilePath : changedXmlFiles) {
+            File xmlFile = new File(fFolder, xmlFilePath);
+            String elementId = xmlFile.getName().replace(".xml", "");
+            Resource resource = idToResourceMap.get(elementId); 
+            
+            // If resource is in the model, reload or unload it
+            if ( resource != null ) {
+				if (xmlFile.exists()) {
+					// RELOAD: Remove all elements and cross-references first
+					for (EObject eObject : resource.getContents().toArray(new EObject[0])) {
+						EcoreUtil.delete(eObject, true);
+					}
+					resource.unload();
+					resource.load(null);
+				    Logger.logInfo("Reloading " + resource.toString()); // JNH
+
+				} else {
+					// UNLOAD: Remove all elements and cross-references from the resource before unloading
+					for (EObject eObject : resource.getContents().toArray(new EObject[0])) {
+						EcoreUtil.delete(eObject, true);
+					}
+					resource.unload();
+					fResourceSet.getResources().remove(resource);
+					Logger.logInfo("Unloading " + resource.toString()); // JNH
+				}
+				continue;
+			} else {
+                // FRESH LOAD: resource is not in the model, so load it fresh
+            	URI resourceURI = URI.createFileURI(xmlFile.getAbsolutePath());
+            	fResourceSet.createResource(resourceURI);
+    		    Logger.logInfo("Loading " + resourceURI.toFileString()); // JNH
+            }
+            
+        }
+
+        return model;
     }
     
     /**

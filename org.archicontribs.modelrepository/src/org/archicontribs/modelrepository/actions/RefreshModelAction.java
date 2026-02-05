@@ -8,6 +8,7 @@ package org.archicontribs.modelrepository.actions;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.security.GeneralSecurityException;
+import java.util.Set;
 
 import org.archicontribs.modelrepository.IModelRepositoryImages;
 import org.archicontribs.modelrepository.authentication.ProxyAuthenticator;
@@ -15,7 +16,9 @@ import org.archicontribs.modelrepository.authentication.UsernamePassword;
 import org.archicontribs.modelrepository.authentication.internal.EncryptedCredentialsStorage;
 import org.archicontribs.modelrepository.grafico.ArchiRepository;
 import org.archicontribs.modelrepository.grafico.BranchStatus;
+import org.archicontribs.modelrepository.grafico.ChangedFilesDetector;
 import org.archicontribs.modelrepository.grafico.GraficoModelLoader;
+import org.archicontribs.modelrepository.grafico.GraficoModelReloader;
 import org.archicontribs.modelrepository.grafico.GraficoUtils;
 import org.archicontribs.modelrepository.grafico.IRepositoryListener;
 import org.archicontribs.modelrepository.merge.MergeConflictHandler;
@@ -35,6 +38,7 @@ import org.eclipse.ui.IWorkbenchWindow;
 
 import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.util.Logger;
 
 /**
  * Refresh model action
@@ -185,6 +189,10 @@ public class RefreshModelAction extends AbstractModelAction {
         pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_6);
         Display.getCurrent().readAndDispatch(); // update dialog
         
+        // JNH - prepare to detect changed files
+        ChangedFilesDetector detector = new ChangedFilesDetector(getRepository().getLocalGitFolder());
+        String beforeCommit = detector.getCurrentCommitHash();
+        
         try {
             pullResult = getRepository().pullFromRemote(npw, new ProgressMonitorWrapper(pmDialog.getProgressMonitor()));
         }
@@ -197,6 +205,12 @@ public class RefreshModelAction extends AbstractModelAction {
             
             throw ex;
         }
+       
+        // JNH - get changed files
+        String afterCommit = detector.getCurrentCommitHash();
+        Set<String> changedFiles = detector.getChangedXmlFilesBetweenCommits(beforeCommit, afterCommit);
+        Logger.logInfo("Git Detected " + changedFiles.size() + " changed files"); // JNH
+        detector.close();
         
         // Check for tracking updates
         FetchResult fetchResult = pullResult.getFetchResult();
@@ -206,10 +220,12 @@ public class RefreshModelAction extends AbstractModelAction {
         if(pullResult.getMergeResult().getMergeStatus() == MergeStatus.ALREADY_UP_TO_DATE) {
             // Check if any tracked refs were updated
             if(newTrackingRefUpdates) {
-                return PULL_STATUS_OK;
+                // JNH return PULL_STATUS_OK;
+                Logger.logInfo("PULL_STATUS_OK, but reloading anyways"); // JNH
             }
             
-            return PULL_STATUS_UP_TO_DATE;
+            // JNH return PULL_STATUS_UP_TO_DATE;
+            Logger.logInfo("PULL_STATUS_UP_TO_DATE, but reloading anyways"); // JNH
         }
         
         pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_7);
@@ -219,6 +235,12 @@ public class RefreshModelAction extends AbstractModelAction {
         // Setup the Graphico Model Loader
         GraficoModelLoader loader = new GraficoModelLoader(getRepository());
 
+        // Setup the Model Reloader
+        GraficoModelReloader reloader = new GraficoModelReloader(getRepository());
+        
+        // JNH - Log the reload time
+        long timeStart = System.currentTimeMillis();
+		
         // Merge failure
         if(!pullResult.isSuccessful() && pullResult.getMergeResult().getMergeStatus() == MergeStatus.CONFLICTING) {
             // Get the remote ref name
@@ -263,7 +285,10 @@ public class RefreshModelAction extends AbstractModelAction {
             
             // Reload the model from the Grafico XML files
             try {
-            	loader.loadModel();
+            	Logger.logInfo("Reloading after merge conflict resolution"); // JNH
+    			// loader.loadModel();
+            	// loader.reloadModel(changedFiles);
+            	reloader.reloadModel(changedFiles);
             }
             catch(IOException ex) {
             	handler.resetToLocalState(); // Clean up
@@ -272,8 +297,15 @@ public class RefreshModelAction extends AbstractModelAction {
         } else { 
 		    // Reload the model from the Grafico XML files
 		    pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_8);
-			loader.loadModel();
+		    Logger.logInfo("Reloading after merge"); // JNH
+			// loader.loadModel();
+		    // loader.reloadModel(changedFiles);
+		    reloader.reloadModel(changedFiles);
         }
+        
+        // JNH - Log the reload time
+        long timeEnd = System.currentTimeMillis();
+        Logger.logInfo("Total Reload Time: " + (timeEnd-timeStart) + "ms");
         
         // Do a commit if needed
         if(getRepository().hasChangesToCommit()) {
