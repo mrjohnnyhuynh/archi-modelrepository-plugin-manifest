@@ -97,6 +97,16 @@ public class GraficoModelExporter {
     Map<Resource,Boolean> exportMap;
     private int skipped = 0;
     private int exported = 0;
+    private final Set<Path> writtenFiles = new HashSet<>();
+    private final Set<Path> deletedFiles = new HashSet<>();
+    
+    public Set<Path> getWrittenFiles() {
+    	return writtenFiles;
+    }
+
+    public Set<Path> getDeletedFiles() {
+    	return deletedFiles;
+    }
     
 	/**
 	 * @param model The model to export
@@ -196,6 +206,11 @@ public class GraficoModelExporter {
                 protected IStatus run(IProgressMonitor monitor) {
                     try {
                         resource.save(null);
+                        Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
+                        if (!filePath.isAbsolute()) {
+							filePath = modelFolder.toPath().resolve(filePath).normalize();
+						}
+                        writtenFiles.add(filePath);
                     }
                     catch(IOException ex) {
                         pm.catchException(ex);
@@ -223,13 +238,14 @@ public class GraficoModelExporter {
                 if (f.exists()) {
                 	deleted++;
                     f.delete();
+                    deletedFiles.add(f.toPath());
                 }
             }
         }
 
         // Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Exported " + exported + " Skipped " + skipped + " Deleted " + deleted + " in " + (timeEnd-timeStart) + "ms");
+        System.err.println("MANIFEST Exported " + exported + ", Skipped " + skipped + ", Deleted " + deleted + ", in " + (timeEnd-timeStart) + "ms");
 
         // save new manifest
         saveManifest(modelFolder, newManifest);
@@ -386,7 +402,7 @@ public class GraficoModelExporter {
                 }
             }
         }
-        System.err.println("Loaded manifest: " + manifest.size());
+        System.err.println("MANIFEST Loaded: " + manifest.size() + " entries from " + manifestFile.getAbsolutePath());
         return manifest;
     }
 
@@ -404,7 +420,7 @@ public class GraficoModelExporter {
             .map(e -> e.getKey() + "=" + e.getValue())
             .toList();
         Files.write(manifestFile.toPath(), lines);
-        System.err.println("Saved manifest: " + sorted.size());
+        System.err.println("MANIFEST Saved: " + sorted.size() + " entries to " + manifestFile.getAbsolutePath());
     }
 
     /**

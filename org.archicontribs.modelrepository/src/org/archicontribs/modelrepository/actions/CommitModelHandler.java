@@ -33,7 +33,7 @@ public class CommitModelHandler extends AbstractModelHandler {
         
     	// Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Total Commit Time: " + (timeEnd-timeStart) + "ms");
+        System.err.println("*** Total Commit Time: " + (timeEnd-timeStart) + "ms");
 
         return null;
     }
