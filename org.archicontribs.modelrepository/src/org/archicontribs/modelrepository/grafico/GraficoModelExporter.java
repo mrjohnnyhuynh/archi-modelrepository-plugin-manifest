@@ -375,7 +375,7 @@ public class GraficoModelExporter {
      * @throws IOException
      */
     private Map<String,String> loadManifest(File modelFolder) throws IOException {
-        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        File manifestFile = new File(modelFolder, MANIFEST_NAME);
         Map<String,String> manifest = new HashMap<>();
         if (manifestFile.exists()) {
             for (String line : Files.readAllLines(manifestFile.toPath())) {
@@ -398,7 +398,7 @@ public class GraficoModelExporter {
      * @throws IOException
      */    
     private void saveManifest(File modelFolder, Map<String,String> manifest) throws IOException {
-        File manifestFile = new File(modelFolder, ".grafico_manifest");
+        File manifestFile = new File(modelFolder, MANIFEST_NAME);
         Map<String,String> sorted = new TreeMap<>(manifest);
         List<String> lines = sorted.entrySet().stream()
             .map(e -> e.getKey() + "=" + e.getValue())
