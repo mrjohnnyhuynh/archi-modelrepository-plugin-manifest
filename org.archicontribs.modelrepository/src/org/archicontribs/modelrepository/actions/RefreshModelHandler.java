@@ -33,7 +33,7 @@ public class RefreshModelHandler extends AbstractModelHandler {
         
     	// Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Total Refresh Time: " + (timeEnd-timeStart) + "ms");
+        System.err.println("*** Total Refresh Time: " + (timeEnd-timeStart) + "ms");
         
         return null;
     }

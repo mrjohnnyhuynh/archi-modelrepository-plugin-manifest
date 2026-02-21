@@ -33,7 +33,7 @@ public class PushModelHandler extends AbstractModelHandler {
         
     	// Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Total Publish Time: " + (timeEnd-timeStart) + "ms");
+        System.err.println("*** Total Publish Time: " + (timeEnd-timeStart) + "ms");
         
         return null;
     }
