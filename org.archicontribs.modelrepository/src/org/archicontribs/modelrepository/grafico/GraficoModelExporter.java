@@ -52,7 +52,6 @@ import com.archimatetool.model.IDiagramModelImageProvider;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.IFolderContainer;
 import com.archimatetool.model.IIdentifier;
-import com.archimatetool.model.util.Logger;
 
 
 /**
@@ -230,7 +229,7 @@ public class GraficoModelExporter {
 
         // Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        Logger.logInfo("Exported " + exported + " Skipped " + skipped + " Deleted " + deleted + " in " + (timeEnd-timeStart) + "ms");
+        System.err.println("Exported " + exported + " Skipped " + skipped + " Deleted " + deleted + " in " + (timeEnd-timeStart) + "ms");
 
         // save new manifest
         saveManifest(modelFolder, newManifest);
@@ -387,7 +386,7 @@ public class GraficoModelExporter {
                 }
             }
         }
-        Logger.logInfo("Loaded manifest: " + manifest.size());
+        System.err.println("Loaded manifest: " + manifest.size());
         return manifest;
     }
 
@@ -405,7 +404,7 @@ public class GraficoModelExporter {
             .map(e -> e.getKey() + "=" + e.getValue())
             .toList();
         Files.write(manifestFile.toPath(), lines);
-        Logger.logInfo("Saved manifest: " + sorted.size());
+        System.err.println("Saved manifest: " + sorted.size());
     }
 
     /**
