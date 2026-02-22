@@ -37,11 +37,15 @@ public class CloneInputDialog extends TitleAreaDialog {
 	private Text txtURL;
     private Text txtUsername;
     private Text txtPassword;
+    private Text txtCommitHash;
+    private Text txtDepth;
 
     private Button storeCredentialsButton;
     
     private String URL;
     private String username;
+    private String commitHash;
+    private int depth;
     private char[] password;
     private boolean doStoreCredentials;
 
@@ -81,6 +85,8 @@ public class CloneInputDialog extends TitleAreaDialog {
         
         txtUsername = createTextField(container, Messages.CloneInputDialog_3, SWT.NONE);
         txtPassword = createTextField(container, Messages.CloneInputDialog_4, SWT.PASSWORD);
+        txtCommitHash = createTextField(container, Messages.CloneInputDialog_5, SWT.NONE);
+        txtDepth = createTextField(container, Messages.CloneInputDialog_6, SWT.NONE);
         createPreferenceButton(container);
         
         return area;
@@ -115,6 +121,16 @@ public class CloneInputDialog extends TitleAreaDialog {
     protected void saveInput() {
         username = txtUsername.getText();
         password = txtPassword.getTextChars();
+        commitHash = txtCommitHash.getText();
+        try {
+	        depth = Integer.parseInt(txtDepth.getText());
+	        if (depth < 0) {
+				depth = 0;
+			}
+        }
+		catch(NumberFormatException ex) {
+			depth = 0;
+		}
         URL = txtURL.getText().trim();
         doStoreCredentials = storeCredentialsButton.getSelection();
     }
@@ -131,6 +147,14 @@ public class CloneInputDialog extends TitleAreaDialog {
     
     public String getURL() {
         return URL;
+    }
+    
+    public String getCommitHash() {
+		return commitHash;
+	}
+    
+    public int getDepth() {
+   		return depth;
     }
     
     public boolean doStoreCredentials() {

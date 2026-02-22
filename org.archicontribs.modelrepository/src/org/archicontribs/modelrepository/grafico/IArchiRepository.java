@@ -84,6 +84,7 @@ public interface IArchiRepository extends IGraficoConstants {
      * @throws IOException
      */
     void cloneModel(String repoURL, UsernamePassword npw, ProgressMonitor monitor) throws GitAPIException, IOException;
+    void cloneModel(String repoURL, UsernamePassword npw, ProgressMonitor monitor, String commitHash, int commitDepth) throws GitAPIException, IOException;
 
     /**
      * Push to Remote

@@ -50,6 +50,7 @@ import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.ProgressMonitor;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -190,16 +191,46 @@ public class ArchiRepository implements IArchiRepository {
             return commitCommand.call();
         }
     }
-    
+
     @Override
     public void cloneModel(String repoURL, UsernamePassword npw, ProgressMonitor monitor) throws GitAPIException, IOException {
+    	cloneModel(repoURL, npw, monitor, null, 0);
+    }
+
+
+    @Override
+    public void cloneModel(String repoURL, UsernamePassword npw, ProgressMonitor monitor, String commitHash, int depth) throws GitAPIException, IOException {
         CloneCommand cloneCommand = Git.cloneRepository();
         cloneCommand.setDirectory(getLocalRepositoryFolder());
         cloneCommand.setURI(repoURL);
         cloneCommand.setTransportConfigCallback(CredentialsAuthenticator.getTransportConfigCallback(repoURL, npw));
         cloneCommand.setProgressMonitor(monitor);
+        
+        if ( depth > 0 ) {
+			cloneCommand.setDepth(depth);
+			System.err.println("GIT CLONE: depth=" + depth);
+		}
 
         try(Git git = cloneCommand.call()) {
+            // If a specific commit hash is requested, hard-reset to it.
+            if(StringUtils.isSet(commitHash)) {
+                ObjectId targetId = git.getRepository().resolve(commitHash);
+                if(targetId == null) {
+                    throw new IOException("Commit " + commitHash + " is not reachable at depth " + depth 
+                        + ". Increase the depth or leave it blank for a full clone.");
+                }
+                System.err.println("GIT CLONE: Resetting to commit " + commitHash);
+                git.reset().setMode(ResetType.HARD).setRef(commitHash).call();
+                git.getRepository().getRefDatabase().refresh();
+                
+                // Update remote tracking ref match local head
+                // This is optional but makes the branch status more intuitive
+                String branch = git.getRepository().getBranch();
+                RefUpdate refUpdate = git.getRepository().updateRef("refs/remotes/origin/" + branch);
+                refUpdate.setNewObjectId(targetId);
+                refUpdate.setForceUpdate(true);
+                refUpdate.update();
+            }
             setDefaultConfigSettings(git.getRepository());
         }
     }
