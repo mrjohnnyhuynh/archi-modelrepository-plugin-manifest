@@ -31,6 +31,10 @@ public class Messages extends NLS {
     public static String CloneInputDialog_3;
 
     public static String CloneInputDialog_4;
+    
+    public static String CloneInputDialog_5; // Commit Hash
+    
+    public static String CloneInputDialog_6; // Commit Depth
 
     public static String CommitDialog_0;
 

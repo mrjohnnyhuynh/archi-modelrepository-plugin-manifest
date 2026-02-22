@@ -72,6 +72,8 @@ public class CloneModelAction extends AbstractModelAction {
         }
     	
         final String repoURL = dialog.getURL();
+        final String commitHash = dialog.getCommitHash();
+        final int commitDepth = dialog.getDepth();
         final boolean storeCredentials = dialog.doStoreCredentials();
         final UsernamePassword npw = dialog.getUsernamePassword();
         
@@ -102,7 +104,7 @@ public class CloneModelAction extends AbstractModelAction {
                         ProxyAuthenticator.update(repoURL);
                         
                         pm.beginTask(Messages.CloneModelAction_4, -1);
-                        getRepository().cloneModel(repoURL, npw, new ProgressMonitorWrapper(pm));
+                        getRepository().cloneModel(repoURL, npw, new ProgressMonitorWrapper(pm), commitHash, commitDepth);
                     }
                     catch(Exception ex) {
                         exception[0] = ex;
