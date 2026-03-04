@@ -8,12 +8,14 @@ package org.archicontribs.modelrepository.grafico;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.eclipse.emf.common.util.EList;
@@ -70,6 +72,7 @@ public class GraficoModelImporter {
     
 	// ID -> Object lookup table
     private Map<String, IIdentifier> fIDLookup;
+    private Map<File, byte[]> fFileCache;
     
     /**
      * Unresolved missing objects
@@ -117,8 +120,24 @@ public class GraficoModelImporter {
     	// Reset the ID -> Object lookup table
     	fIDLookup = new HashMap<String, IIdentifier>();
     	
+    	// read all XML files in parallel using NIO
+    	fFileCache = new ConcurrentHashMap<>();
+    	List<Path> xmlPaths = Files.walk(modelFolder.toPath())
+    	    .filter(p -> p.toString().endsWith(".xml")) //$NON-NLS-1$
+    	    .collect(java.util.stream.Collectors.toList());
+
+    	xmlPaths.parallelStream().forEach(path -> {
+    	    try {
+    	        fFileCache.put(path.toFile(), Files.readAllBytes(path));
+    	    }
+    	    catch(IOException ex) {
+    	        ModelRepositoryPlugin.getInstance().getLog().error("Could not pre-load file: " + path, ex); //$NON-NLS-1$
+    	    }
+    	});
+    	
         // Load the Model from files (it will contain unresolved proxies)
     	fModel = loadModel(modelFolder);
+    	fFileCache = null; // Clear file cache to free up memory
     	
     	// Create a new Resource for the model object so we can work with it in the ModelCompatibility class
     	Resource resource = new XMLResourceImpl();
@@ -330,8 +349,19 @@ public class GraficoModelImporter {
      * @throws IOException 
      */
     private EObject loadElement(File file) throws IOException {
-        IIdentifier eObject = GraficoResourceLoader.loadEObject(file);
+    	IIdentifier eObject;
         
+        // Use pre-loaded bytes if available 
+        byte[] bytes = fFileCache != null ? fFileCache.get(file) : null;
+        if(bytes != null) {
+            // Use pre-loaded bytes to avoid a new FileInputStream per file
+            eObject = GraficoResourceLoader.loadEObject(new java.io.ByteArrayInputStream(bytes));
+        }
+        else {
+            // Fallback for any file not in cache (shouldn't happen, but safe)
+            eObject = GraficoResourceLoader.loadEObject(file);
+        }
+
         // Update an ID -> Object mapping table (used as a cache to resolve proxies)
         fIDLookup.put(eObject.getId(), eObject);
         if(eObject instanceof IArchimateModel) {

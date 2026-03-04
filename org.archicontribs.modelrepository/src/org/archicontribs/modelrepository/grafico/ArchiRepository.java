@@ -18,6 +18,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -61,6 +62,9 @@ import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.dircache.DirCache;
+import org.eclipse.jgit.dircache.DirCacheEditor;
+import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.ui.PlatformUI;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -402,7 +406,7 @@ public class ArchiRepository implements IArchiRepository {
         }
         
         final Exception[] exception = new Exception[1];
-
+        
         try {
             // When using this be careful that no UI operations are called as this could lead to an SWT Invalid thread access exception
             // This will show a Cancel button which will not cancel, but this progress monitor is the only one which does not freeze the UI
@@ -415,7 +419,10 @@ public class ArchiRepository implements IArchiRepository {
                         // Export
                         GraficoModelExporter exporter = new GraficoModelExporter(model, getLocalRepositoryFolder());
                         exporter.exportModel();
-                        
+
+                        long timeStart = System.currentTimeMillis();
+                        System.err.println("GIT operations started...");
+
                         // Get what was exported and deleted
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
@@ -423,10 +430,39 @@ public class ArchiRepository implements IArchiRepository {
                         // Check lock file is deleted
                         checkDeleteLockFile();
 
-                        // Stage files to add
+                        // Stage modified files to index - this can take a long time!
+                        // This will clear any different line endings and calls to git.status() will be faster
+                        
+                        // GIT operations
                         try(Git git = Git.open(getLocalRepositoryFolder())) {
-							Path repoRoot = getLocalRepositoryFolder().toPath();
+                            AddCommand addCommand = git.add();
+                            addCommand.addFilepattern(".");
+                            addCommand.setUpdate(false);
+                            addCommand.call();
+
+                            /*
+                            Path repoRoot = getLocalRepositoryFolder().toPath();
+							
+							// For each written file, refresh the stat cache first, then add 
 	                        if ( ! writtenFiles.isEmpty() ) {
+	                        	
+	                        	DirCache cache = git.getRepository().lockDirCache();
+	                        	try {
+	                        	    DirCacheEditor editor = cache.editor();
+	                        	    for(Path path : writtenFiles) {
+	                        	        String relative = repoRoot.relativize(path).toString().replace(File.separatorChar, '/');
+	                        	        DirCacheEntry entry = cache.getEntry(relative);
+	                        	        if(entry != null) {
+	                        	            File f = path.toFile();
+	                        	            entry.setLastModified(Instant.ofEpochMilli(f.lastModified()));
+	                        	            entry.setLength((int) f.length());
+	                        	        }
+	                        	    }
+	                        	    editor.commit();
+	                        	} finally {
+	                        	    cache.unlock();
+	                        	}
+	                        	
 								AddCommand addCommand = git.add();
 								for(Path path : writtenFiles) {
 									addCommand.addFilepattern(repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
@@ -445,7 +481,11 @@ public class ArchiRepository implements IArchiRepository {
 	                        	rmCommand.call();
 	                        	System.err.println("GIT REMOVE: " + deletedFiles.size() + " files");
 	                        }
+	                        */
                         }
+                        
+                        long timeEnd = System.currentTimeMillis();
+                        System.err.println("GIT operations finished in " + (timeEnd-timeStart) + "ms");
                     }
                     catch(IOException | GitAPIException ex) {
                         exception[0] = ex;
@@ -462,7 +502,7 @@ public class ArchiRepository implements IArchiRepository {
         }
         if(exception[0] instanceof GitAPIException) {
             throw (GitAPIException)exception[0];
-        }
+        }        
     }
     
     @Override

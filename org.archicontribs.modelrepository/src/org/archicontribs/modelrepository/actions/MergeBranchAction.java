@@ -157,14 +157,14 @@ public class MergeBranchAction extends AbstractModelAction {
         
         PushModelAction pushAction = new PushModelAction(fWindow, getRepository().locateModel());
 
-        // Init
-        int status = pushAction.init();
-        if(status == RefreshModelAction.USER_CANCEL) {
+        // Check primary key set before investing time in init() which does a model export
+        if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
             return;
         }
         
-        // Check primary key set
-        if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
+        // Init
+        int status = pushAction.init();
+        if(status == RefreshModelAction.USER_CANCEL) {
             return;
         }
         

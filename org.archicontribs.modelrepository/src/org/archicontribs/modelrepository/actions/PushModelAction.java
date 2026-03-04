@@ -50,13 +50,13 @@ public class PushModelAction extends RefreshModelAction {
     @Override
     public void run() {
         try {
-            int status = init();
-            if(status != USER_OK) {
+            // Check primary key set before investing time in init() which does a model export
+            if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
                 return;
             }
-            
-            // Check primary key set
-            if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
+
+            int status = init();
+            if(status != USER_OK) {
                 return;
             }
             
