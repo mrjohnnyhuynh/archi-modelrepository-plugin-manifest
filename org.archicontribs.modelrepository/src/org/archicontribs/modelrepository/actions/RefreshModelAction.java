@@ -77,15 +77,15 @@ public class RefreshModelAction extends AbstractModelAction {
     @Override
     public void run() {
         try {
-            int status = init();
-            if(status != USER_OK) {
-                return;
-            }
-            
-            // Check primary key set
+            // Check primary key set before investing time in init() which does a model export
             if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
                 return;
             }
+
+            int status = init();
+            if(status != USER_OK) {
+                return;
+            }            
 
             // Get this before opening the progress dialog
             // UsernamePassword will be null if using SSH
@@ -207,9 +207,11 @@ public class RefreshModelAction extends AbstractModelAction {
             // Check if any tracked refs were updated
             if(newTrackingRefUpdates) {
                 return PULL_STATUS_OK;
+                // DEBUG System.err.println("PULL_STATUS_OK - reloading anyways");
             }
             
             return PULL_STATUS_UP_TO_DATE;
+            // DEBUG System.err.println("PULL_STATUS_UP_TO_DATE - reloading anyways");
         }
         
         pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_7);
@@ -274,7 +276,7 @@ public class RefreshModelAction extends AbstractModelAction {
 		    pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_8);
 			loader.loadModel();
         }
-        
+
         // Do a commit if needed
         if(getRepository().hasChangesToCommit()) {
             pmDialog.getProgressMonitor().subTask(Messages.RefreshModelAction_9);

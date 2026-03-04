@@ -62,6 +62,9 @@ public class GraficoModelLoader {
     public IArchimateModel loadModel() throws IOException {
         fRestoredObjects = null;
         
+        // DEBUG - time how long it takes to load the model from Grafico files
+        long timeStart = System.currentTimeMillis();
+        
         // Import Grafico Model
         GraficoModelImporter importer = new GraficoModelImporter(fRepository.getLocalRepositoryFolder());
         
@@ -106,6 +109,10 @@ public class GraficoModelLoader {
             IEditorModelManager.INSTANCE.openModel(graficoModel[0]);
             reopenEditors(graficoModel[0], openModelIDs);
         }
+        
+        // Manifest DEBUG
+        long timeEnd = System.currentTimeMillis();
+        System.err.println("Model Loader time: " + (timeEnd-timeStart) + "ms");
         
         return graficoModel[0];
     }

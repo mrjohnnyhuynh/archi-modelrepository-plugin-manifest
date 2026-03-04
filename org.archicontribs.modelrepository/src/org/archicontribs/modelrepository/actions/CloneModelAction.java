@@ -123,6 +123,9 @@ public class CloneModelAction extends AbstractModelAction {
             // Load it from the Grafico files if we can
             IArchimateModel graficoModel = new GraficoModelLoader(getRepository()).loadModel();
             
+            // TODO should we pre-emptively export the model to Grafico files here?
+            // Can we do it async in the background?
+            
             // We couldn't load it from Grafico so create a new blank model
             if(graficoModel == null) {
                 // New one. This will open in the tree
