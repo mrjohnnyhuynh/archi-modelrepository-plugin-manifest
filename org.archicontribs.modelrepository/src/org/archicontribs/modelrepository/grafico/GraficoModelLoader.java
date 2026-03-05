@@ -112,7 +112,7 @@ public class GraficoModelLoader {
         
         // Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Model Loader time: " + (timeEnd-timeStart) + "ms");
+        System.err.println("*** Model Loaded from XML in " + (timeEnd-timeStart) + "ms");
         
         return graficoModel[0];
     }
