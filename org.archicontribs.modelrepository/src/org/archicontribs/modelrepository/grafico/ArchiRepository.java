@@ -18,7 +18,6 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -31,6 +30,9 @@ import org.eclipse.jgit.api.AddCommand;
 import org.eclipse.jgit.api.CleanCommand;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.CommitCommand;
+import org.eclipse.jgit.dircache.DirCache;
+import org.eclipse.jgit.dircache.DirCacheEditor;
+import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.InitCommand;
@@ -46,6 +48,7 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.PersonIdent;
@@ -62,9 +65,6 @@ import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
-import org.eclipse.jgit.dircache.DirCache;
-import org.eclipse.jgit.dircache.DirCacheEditor;
-import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.ui.PlatformUI;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -430,39 +430,12 @@ public class ArchiRepository implements IArchiRepository {
                         // Check lock file is deleted
                         checkDeleteLockFile();
 
-                        // Stage modified files to index - this can take a long time!
-                        // This will clear any different line endings and calls to git.status() will be faster
-                        
                         // GIT operations
                         try(Git git = Git.open(getLocalRepositoryFolder())) {
-                            AddCommand addCommand = git.add();
-                            addCommand.addFilepattern(".");
-                            addCommand.setUpdate(false);
-                            addCommand.call();
-
-                            /*
                             Path repoRoot = getLocalRepositoryFolder().toPath();
 							
-							// For each written file, refresh the stat cache first, then add 
+							// Stage files to add 
 	                        if ( ! writtenFiles.isEmpty() ) {
-	                        	
-	                        	DirCache cache = git.getRepository().lockDirCache();
-	                        	try {
-	                        	    DirCacheEditor editor = cache.editor();
-	                        	    for(Path path : writtenFiles) {
-	                        	        String relative = repoRoot.relativize(path).toString().replace(File.separatorChar, '/');
-	                        	        DirCacheEntry entry = cache.getEntry(relative);
-	                        	        if(entry != null) {
-	                        	            File f = path.toFile();
-	                        	            entry.setLastModified(Instant.ofEpochMilli(f.lastModified()));
-	                        	            entry.setLength((int) f.length());
-	                        	        }
-	                        	    }
-	                        	    editor.commit();
-	                        	} finally {
-	                        	    cache.unlock();
-	                        	}
-	                        	
 								AddCommand addCommand = git.add();
 								for(Path path : writtenFiles) {
 									addCommand.addFilepattern(repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
@@ -481,7 +454,30 @@ public class ArchiRepository implements IArchiRepository {
 	                        	rmCommand.call();
 	                        	System.err.println("GIT REMOVE: " + deletedFiles.size() + " files");
 	                        }
-	                        */
+	                        
+	                        // Normalize index metadata for unchanged files to avoid unnecessary changes to the index
+	                        // git.add().addFilepattern(".").setUpdate(true).call();
+	                        DirCache dc = git.getRepository().lockDirCache();
+	                        DirCacheEditor editor = dc.editor();
+
+	                        for (Path p : writtenFiles) {
+	                            String rel = repoRoot.relativize(p).toString().replace('\\', '/');
+
+	                            editor.add(new DirCacheEditor.PathEdit(rel) {
+	                                @Override
+	                                public void apply(DirCacheEntry entry) {
+	                                    try {
+	                                        entry.setLastModified(Files.getLastModifiedTime(p).toInstant());
+	                                        entry.setLength(Files.size(p));
+	                                        entry.setFileMode(FileMode.REGULAR_FILE);
+	                                    } catch (IOException e) {
+	                                        throw new RuntimeException(e);
+	                                    }
+	                                }
+	                            });
+	                        }
+
+	                        editor.commit();
                         }
                         
                         long timeEnd = System.currentTimeMillis();
