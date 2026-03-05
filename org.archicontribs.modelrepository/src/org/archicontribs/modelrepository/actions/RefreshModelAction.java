@@ -82,6 +82,8 @@ public class RefreshModelAction extends AbstractModelAction {
                 return;
             }
 
+        	long timeStart = System.currentTimeMillis();
+
             int status = init();
             if(status != USER_OK) {
                 return;
@@ -99,6 +101,7 @@ public class RefreshModelAction extends AbstractModelAction {
             Display.getCurrent().asyncExec(new Runnable() {
                 @Override
                 public void run() {
+
                     try {
                         ProgressMonitorDialog pmDialog = new ProgressMonitorDialog(fWindow.getShell());
                         
@@ -145,7 +148,10 @@ public class RefreshModelAction extends AbstractModelAction {
                     }
                 }
             });
-            
+
+            long timeEnd = System.currentTimeMillis();
+            System.err.println("*** Total Refresh Time: " + (timeEnd-timeStart) + "ms");
+
         }
         catch(GeneralSecurityException ex) {
             displayCredentialsErrorDialog(ex);

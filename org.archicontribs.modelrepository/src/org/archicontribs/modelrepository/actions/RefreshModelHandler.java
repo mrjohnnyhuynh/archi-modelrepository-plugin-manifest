@@ -20,9 +20,6 @@ public class RefreshModelHandler extends AbstractModelHandler {
     
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
-    	// Manifest DEBUG
-        long timeStart = System.currentTimeMillis();
-        
         IArchiRepository repository = getActiveArchiRepository();
         
         if(repository != null) {
@@ -30,11 +27,7 @@ public class RefreshModelHandler extends AbstractModelHandler {
             action.setRepository(repository);
             action.run();
         }
-        
-    	// Manifest DEBUG
-        long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Total Refresh Time: " + (timeEnd-timeStart) + "ms");
-        
+
         return null;
     }
     

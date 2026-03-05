@@ -49,6 +49,9 @@ public class PushModelAction extends RefreshModelAction {
 
     @Override
     public void run() {
+
+        long timeStart = System.currentTimeMillis();
+
         try {
             // Check primary key set before investing time in init() which does a model export
             if(!EncryptedCredentialsStorage.checkPrimaryKeySet()) {
@@ -155,6 +158,10 @@ public class PushModelAction extends RefreshModelAction {
         catch(Exception ex) {
             displayErrorDialog(Messages.PushModelAction_0, ex);
         }
+        
+        long timeEnd = System.currentTimeMillis();
+        System.err.println("*** Total Publish Time: " + (timeEnd-timeStart) + "ms");
+
     }
     
     Iterable<PushResult> push(UsernamePassword npw, ProgressMonitorDialog pmDialog) throws IOException, GitAPIException {

@@ -54,6 +54,8 @@ public class CommitModelAction extends AbstractModelAction {
             }
         }
 
+        long timeStart = System.currentTimeMillis();
+
         // Do the Grafico Export first
         try {
             getRepository().exportModelToGraficoFiles();
@@ -79,5 +81,9 @@ public class CommitModelAction extends AbstractModelAction {
         catch(Exception ex) {
             displayErrorDialog(Messages.CommitModelAction_0, ex);
         }
+
+        long timeEnd = System.currentTimeMillis();
+        System.err.println("*** Total Commit Time: " + (timeEnd-timeStart) + "ms");
+
     }
 }

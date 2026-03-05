@@ -21,8 +21,6 @@ public class CommitModelHandler extends AbstractModelHandler {
     
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
-    	// Manifest DEBUG
-        long timeStart = System.currentTimeMillis();
 
         IArchimateModel model = getActiveArchimateModel();
         
@@ -30,10 +28,6 @@ public class CommitModelHandler extends AbstractModelHandler {
             CommitModelAction action = new CommitModelAction(HandlerUtil.getActiveWorkbenchWindowChecked(event), model);
             action.run();
         }
-        
-    	// Manifest DEBUG
-        long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Total Commit Time: " + (timeEnd-timeStart) + "ms");
 
         return null;
     }
