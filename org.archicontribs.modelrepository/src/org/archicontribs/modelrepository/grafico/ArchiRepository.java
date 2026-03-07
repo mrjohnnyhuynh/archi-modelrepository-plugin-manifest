@@ -421,11 +421,11 @@ public class ArchiRepository implements IArchiRepository {
                         exporter.exportModel();
 
                         long timeStart = System.currentTimeMillis();
-                        System.err.println("GIT operations started...");
 
                         // Get what was exported and deleted
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
+                        System.err.println("Model exported. GIT ADD: " + writtenFiles.size() + "; REMOVE: " + deletedFiles.size());
                         
                         // Check lock file is deleted
                         checkDeleteLockFile();
@@ -439,10 +439,10 @@ public class ArchiRepository implements IArchiRepository {
 								AddCommand addCommand = git.add();
 								for(Path path : writtenFiles) {
 									addCommand.addFilepattern(repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
+									// System.out.println("Adding to index: " + repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
 								}
 								addCommand.setUpdate(false);
 								addCommand.call();
-								System.err.println("GIT ADD: " + writtenFiles.size() + " files");
 							}
 	                        
 	                        // Stage files to remove
@@ -452,32 +452,44 @@ public class ArchiRepository implements IArchiRepository {
 									rmCommand.addFilepattern(repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
 								}
 	                        	rmCommand.call();
-	                        	System.err.println("GIT REMOVE: " + deletedFiles.size() + " files");
 	                        }
 	                        
-	                        // Normalize index metadata for unchanged files to avoid unnecessary changes to the index
-	                        // git.add().addFilepattern(".").setUpdate(true).call();
-	                        DirCache dc = git.getRepository().lockDirCache();
-	                        DirCacheEditor editor = dc.editor();
+	                        // Normalize index to avoid unnecessary commits
+	                        Status status = git.status().call();
+	                        Set<String> modified = status.getModified();
+	                        Set<String> missing = status.getMissing();
+	                        Set<String> removed = status.getRemoved();
 
-	                        for (Path p : writtenFiles) {
-	                            String rel = repoRoot.relativize(p).toString().replace('\\', '/');
+                            DirCache dc = git.getRepository().lockDirCache();
+                            DirCacheEditor editor = dc.editor();
 
-	                            editor.add(new DirCacheEditor.PathEdit(rel) {
-	                                @Override
-	                                public void apply(DirCacheEntry entry) {
-	                                    try {
-	                                        entry.setLastModified(Files.getLastModifiedTime(p).toInstant());
-	                                        entry.setLength(Files.size(p));
-	                                        entry.setFileMode(FileMode.REGULAR_FILE);
-	                                    } catch (IOException e) {
-	                                        throw new RuntimeException(e);
-	                                    }
-	                                }
-	                            });
-	                        }
+                            for (String path : modified) {
 
-	                        editor.commit();
+                                // Skip files that do not exist in the working tree
+                                if (missing.contains(path) || removed.contains(path)) {
+                                    continue;
+                                }
+
+                                // Skip if the file does not exist or is not a regular file
+                                Path p = repoRoot.resolve(path).normalize();
+                                if (!Files.exists(p) || !Files.isRegularFile(p)) {
+                                    continue;
+                                }
+
+                                editor.add(new DirCacheEditor.PathEdit(path) {
+                                    @Override
+                                    public void apply(DirCacheEntry entry) {
+                                        try {
+                                            entry.setLastModified(Files.getLastModifiedTime(p).toInstant());
+                                            entry.setLength(Files.size(p));
+                                            entry.setFileMode(FileMode.REGULAR_FILE);
+                                        } catch (IOException e) {
+                                            throw new RuntimeException(e);
+                                        }
+                                    }
+                                });
+                            }
+                            editor.commit();
                         }
                         
                         long timeEnd = System.currentTimeMillis();
