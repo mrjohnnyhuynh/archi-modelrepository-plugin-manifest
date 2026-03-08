@@ -65,6 +65,7 @@ import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.treewalk.filter.TreeFilter;
 import org.eclipse.ui.PlatformUI;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -236,6 +237,27 @@ public class ArchiRepository implements IArchiRepository {
                 refUpdate.update();
             }
             setDefaultConfigSettings(git.getRepository());
+            
+            // Build the manifest from the git object store (not from disk) 
+            File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
+            String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
+            GraficoManifest manifest = new GraficoManifest(modelFolder);
+
+            Repository repo = git.getRepository();
+            try(RevWalk rw = new RevWalk(repo);
+                TreeWalk tw = new TreeWalk(repo)) {
+                
+                tw.addTree(rw.parseCommit(repo.resolve(Constants.HEAD)).getTree());
+                tw.setRecursive(true);
+                
+                while(tw.next()) {
+                    String path = tw.getPathString();
+                    if(!path.startsWith(modelPrefix) || !path.endsWith(".xml")) continue;
+                    String relPath = path.substring(modelPrefix.length());
+                    manifest.put(relPath, repo.open(tw.getObjectId(0)).getBytes());
+                }
+            }
+            manifest.save();
         }
     }
 
@@ -258,14 +280,55 @@ public class ArchiRepository implements IArchiRepository {
     @Override
     public PullResult pullFromRemote(UsernamePassword npw, ProgressMonitor monitor) throws IOException, GitAPIException {
         try(Git git = Git.open(getLocalRepositoryFolder())) {
+            ObjectId before = git.getRepository().resolve(Constants.HEAD);
+            
             PullCommand pullCommand = git.pull();
             pullCommand.setTransportConfigCallback(CredentialsAuthenticator.getTransportConfigCallback(getOnlineRepositoryURL(), npw));
             pullCommand.setRebase(false); // Merge, not rebase
             pullCommand.setProgressMonitor(monitor);
-            return pullCommand.call();
+            PullResult result = pullCommand.call();
+            
+            ObjectId after = git.getRepository().resolve(Constants.HEAD);
+            
+            // Pull had changes; update the manifest
+            if(!before.equals(after)) {
+                File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
+                String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
+                GraficoManifest manifest = GraficoManifest.load(modelFolder);
+                
+                Repository repo = git.getRepository();
+                try(RevWalk rw = new RevWalk(repo);
+                    TreeWalk tw = new TreeWalk(repo)) {
+                    
+                    tw.addTree(rw.parseCommit(before).getTree());
+                    tw.addTree(rw.parseCommit(after).getTree());
+                    tw.setFilter(TreeFilter.ANY_DIFF);
+                    tw.setRecursive(true);
+                    
+                    int removed = 0;
+                    int added = 0;
+                    while(tw.next()) {
+                        String path = tw.getPathString();
+                        if(!path.startsWith(modelPrefix)) continue;
+                        String relPath = path.substring(modelPrefix.length());
+                        
+                        if(tw.getObjectId(1).equals(ObjectId.zeroId())) {
+                            manifest.remove(relPath);
+                            removed++;
+                        } else {
+                            manifest.put(relPath, repo.open(tw.getObjectId(1)).getBytes());
+                            added++;
+                        }
+                    }
+                    System.err.println("GIT PULL: " + added + " files added/modified, " + removed + " files removed. Manifest updated.");
+                }
+                manifest.save();
+            }
+            
+            return result;
         }
     }
-    
+
     @Override
     public FetchResult fetchFromRemote(UsernamePassword npw, ProgressMonitor monitor, boolean isDryrun) throws IOException, GitAPIException {
         try(Git git = Git.open(getLocalRepositoryFolder())) {
@@ -425,7 +488,7 @@ public class ArchiRepository implements IArchiRepository {
                         // Get what was exported and deleted
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
-                        System.err.println("Model exported. GIT ADD: " + writtenFiles.size() + "; REMOVE: " + deletedFiles.size());
+                        System.err.println("Preparing GIT ADD: " + writtenFiles.size() + "; GIT REMOVE: " + deletedFiles.size());
                         
                         // Check lock file is deleted
                         checkDeleteLockFile();
