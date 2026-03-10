@@ -10,6 +10,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.security.GeneralSecurityException;
 
 import org.archicontribs.modelrepository.IModelRepositoryImages;
+import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.authentication.ProxyAuthenticator;
 import org.archicontribs.modelrepository.authentication.UsernamePassword;
 import org.archicontribs.modelrepository.authentication.internal.EncryptedCredentialsStorage;
@@ -160,7 +161,9 @@ public class PushModelAction extends RefreshModelAction {
         }
         
         long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Total Publish Time: " + (timeEnd-timeStart) + "ms");
+        String msg = String.format("PUBLISH Completed in %dms", (timeEnd-timeStart));
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
 
     }
     

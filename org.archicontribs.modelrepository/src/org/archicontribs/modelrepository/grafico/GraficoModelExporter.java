@@ -236,7 +236,9 @@ public class GraficoModelExporter {
 
         // Manifest DEBUG
         long timeEnd = System.currentTimeMillis();
-        System.err.println("Model Exported " + exported + ", Skipped " + skipped + ", Deleted " + deleted + ", in " + (timeEnd-timeStart) + "ms");
+        String msg = String.format("Model Exported %d, Skipped %d, Deleted %d, in %dms", exported, skipped, deleted, (timeEnd-timeStart));
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
 
         // save new manifest
         newManifest.save();

@@ -6,6 +6,7 @@
 package org.archicontribs.modelrepository.actions;
 
 import org.archicontribs.modelrepository.IModelRepositoryImages;
+import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.grafico.ArchiRepository;
 import org.archicontribs.modelrepository.grafico.GraficoUtils;
 import org.archicontribs.modelrepository.grafico.IRepositoryListener;
@@ -83,7 +84,9 @@ public class CommitModelAction extends AbstractModelAction {
         }
 
         long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Total Commit Time: " + (timeEnd-timeStart) + "ms");
+        String msg = String.format("COMMIT Completed in %dms", (timeEnd-timeStart));
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
 
     }
 }

@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import org.archicontribs.modelrepository.ModelRepositoryPlugin;
+
 /**
  * Manages the Grafico manifest file (.grafico_manifest).
  * 
@@ -63,7 +65,10 @@ public class GraficoManifest {
                 }
             }
         }
-        System.err.println("MANIFEST Loaded: " + manifest.size() + " entries from " + manifestFile.getAbsolutePath());
+
+        String msg = String.format("MANIFEST Loaded: %d entries from %s", manifest.size(), manifestFile.getAbsolutePath());
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
         return manifest;
     }
 
@@ -80,7 +85,10 @@ public class GraficoManifest {
                 .map(e -> e.getKey() + "=" + e.getValue()) //$NON-NLS-1$
                 .toList();
         Files.write(manifestFile.toPath(), lines);
-        System.err.println("MANIFEST Saved: " + sorted.size() + " entries to " + manifestFile.getAbsolutePath());
+
+        String msg = String.format("MANIFEST Saved: %d entries to %s", sorted.size(), manifestFile.getAbsolutePath());
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
     }
 
     /**

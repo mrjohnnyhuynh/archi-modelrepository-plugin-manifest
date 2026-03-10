@@ -10,6 +10,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.security.GeneralSecurityException;
 
 import org.archicontribs.modelrepository.IModelRepositoryImages;
+import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.authentication.ProxyAuthenticator;
 import org.archicontribs.modelrepository.authentication.UsernamePassword;
 import org.archicontribs.modelrepository.authentication.internal.EncryptedCredentialsStorage;
@@ -146,8 +147,10 @@ public class RefreshModelAction extends AbstractModelAction {
                             npw.clear();
                         }
 
-                        long timeEnd = System.currentTimeMillis();
-                        System.err.println("*** Total Refresh Time: " + (timeEnd-timeStart) + "ms");
+                        long timeEnd = System.currentTimeMillis();                        
+                        String msg = String.format("REFRESH Completed in %dms", (timeEnd-timeStart));
+                        System.err.println(msg);
+                        ModelRepositoryPlugin.getInstance().getLog().info(msg);
                     }
                 }
             });

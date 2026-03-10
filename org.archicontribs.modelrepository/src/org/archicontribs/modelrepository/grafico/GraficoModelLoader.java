@@ -62,10 +62,10 @@ public class GraficoModelLoader {
     /**
      * Load the model.
      *
-     * <p>If the model is already open <em>and</em> the Git reflog can supply a
+     * If the model is already open and the Git reflog can supply a
      * previous HEAD commit, an incremental reload is attempted: only the XML
      * files that changed between the two commits are processed.  On any error
-     * the code falls through to the original full-reload path.</p>
+     * the code falls through to the original full-reload path.
      *
      * @return the loaded (or updated) model
      * @throws IOException
@@ -73,48 +73,35 @@ public class GraficoModelLoader {
     public IArchimateModel loadModel() throws IOException {
         fRestoredObjects = null;
         
-        // DEBUG - time how long it takes to load the model from Grafico files
         long timeStart = System.currentTimeMillis();
 
-        // -----------------------------------------------------------------------
-        // Incremental path: only attempt when the model is already open so we
-        // have a live object to patch, and when the reflog gives us a "before"
-        // commit to diff against.
-        // -----------------------------------------------------------------------
-        IArchimateModel existingModel = fRepository.locateModel();
-        if(existingModel != null) {
+        IArchimateModel model = fRepository.locateModel();
+        if(model != null) {
             try {
-                IArchimateModel incrementalResult = tryIncrementalLoad(existingModel, timeStart);
+                IArchimateModel incrementalResult = tryIncrementalLoad(model, timeStart);
                 if(incrementalResult != null) {
                     return incrementalResult;
                 }
-                // incrementalResult == null means "nothing changed" or "no diff available"
-                // fall through to full reload
             }
             catch(Exception ex) {
-                // Any error in the incremental path must not corrupt the model.
-                // Log it and fall through to the safe full-reload.
-                ModelRepositoryPlugin.getInstance().getLog().error(
-                    "Incremental model load failed – falling back to full reload", ex); //$NON-NLS-1$
+                ModelRepositoryPlugin.getInstance().getLog().error("Incremental model load failed – falling back to full reload", ex);
             }
         }
 
-        // -----------------------------------------------------------------------
-        // Full reload (original behaviour)
-        // -----------------------------------------------------------------------
-        return fullLoad(timeStart);
+        model = fullLoad();
+        
+        long timeEnd = System.currentTimeMillis();
+        String msg = String.format("*** Model Loaded from XML in " + (timeEnd-timeStart) + "ms");
+        System.err.println(msg);
+        ModelRepositoryPlugin.getInstance().getLog().info(msg);
+
+		return model;
     }
 
-    // -------------------------------------------------------------------------
-    // Incremental load
-    // -------------------------------------------------------------------------
-
     /**
-     * Attempt an incremental update of {@code existingModel} by diffing the
-     * current HEAD against the reflog's previous HEAD ({@code HEAD@{1}}).
+     * Attempt an incremental update of existingModel via GIT DIFF current HEAD against reflog previous HEAD
      *
-     * @return the updated model on success, or {@code null} if no diff was
-     *         available (e.g. nothing changed, shallow clone, fresh checkout).
+     * @return the updated model on success, or null otherwise (e.g. no reflog, no changes, or any error during the update process)
      * @throws Exception propagated to the caller which will fall back to full load
      */
     private IArchimateModel tryIncrementalLoad(IArchimateModel existingModel, long timeStart) throws Exception {
@@ -124,10 +111,9 @@ public class GraficoModelLoader {
             ObjectId currentHead  = repo.resolve(Constants.HEAD);
             // HEAD@{1} is the reflog entry immediately before the most recent change
             // (i.e. the pre-pull commit).  Returns null on a fresh clone / no reflog.
-            ObjectId previousHead = repo.resolve("HEAD@{1}"); //$NON-NLS-1$
+            ObjectId previousHead = repo.resolve("HEAD@{1}");
 
             if(previousHead == null || previousHead.equals(currentHead)) {
-                // No diff available or nothing changed – signal "skip" with null
                 return null;
             }
 
@@ -195,16 +181,16 @@ public class GraficoModelLoader {
             }
 
             long timeEnd = System.currentTimeMillis();
-            System.err.println("*** Model Incrementally Updated in " + (timeEnd - timeStart) + "ms "
-                + "(" + xmlChanges.size() + " XML changes, " + imageChanges.size() + " image changes)");
+            String msg = String.format("*** Model Incrementally Updated in %dms (%d XML changes, %d image changes)", (timeEnd - timeStart), xmlChanges.size(), imageChanges.size());
+            System.err.println(msg);
+	        ModelRepositoryPlugin.getInstance().getLog().info(msg);
 
             return resultModel;
         }
     }
 
     /**
-     * Compute the list of {@link ModelChange} objects by walking the Git diff
-     * between {@code before} and {@code after}.
+     * Compute the list of ModelChange objects by walking the Git diff between 'before' and 'after' commits.
      */
     private List<ModelChange> computeChanges(Repository repo, ObjectId before, ObjectId after) throws IOException {
         List<ModelChange> changes = new ArrayList<>();
@@ -243,9 +229,8 @@ public class GraficoModelLoader {
     /**
      * Apply ADD/MODIFY/DELETE changes to the model's image archive.
      *
-     * <p>The image bytes for ADDs and MODIFYs are read directly from the Git
-     * object store at {@code headCommit} rather than from disk, which is
-     * consistent with how the manifest is built elsewhere in this codebase.</p>
+     * The image bytes for ADDs and MODIFYs are read directly from the Git object store 
+     * so we don't have to worry about the working tree being dirty or out of sync with HEAD
      */
     private void applyImageChanges(IArchimateModel model, List<ModelChange> imageChanges,
                                    Repository repo, ObjectId headCommit) {
@@ -267,10 +252,10 @@ public class GraficoModelLoader {
             }
 
             for(ModelChange change : imageChanges) {
-                String archivePath = change.gitPath; // e.g. "images/foo.png"
+                String archivePath = change.gitPath;
                 switch(change.type) {
                     case DELETE:
-                        // archiveManager.removeByteContentEntry(archivePath);
+                        // TODO: archiveManager does not have a remove entry method. 
                         break;
                     case ADD:
                     case MODIFY:
@@ -281,8 +266,7 @@ public class GraficoModelLoader {
                                 archiveManager.addByteContentEntry(archivePath, bytes);
                             }
                             catch(IOException ex) {
-                                ModelRepositoryPlugin.getInstance().getLog().error(
-                                    "Could not load image from Git object store: " + change.gitPath, ex); //$NON-NLS-1$
+                                ModelRepositoryPlugin.getInstance().getLog().error("Could not load image from Git object store: " + change.gitPath, ex);
                             }
                         }
                         break;
@@ -294,15 +278,11 @@ public class GraficoModelLoader {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Full load (original behaviour, unchanged)
-    // -------------------------------------------------------------------------
-
     /**
      * Perform a full model reload from all Grafico XML files.
      * This is the original {@code loadModel()} implementation.
      */
-    private IArchimateModel fullLoad(long timeStart) throws IOException {
+    private IArchimateModel fullLoad() throws IOException {
         // Import Grafico Model
         GraficoModelImporter importer = new GraficoModelImporter(fRepository.getLocalRepositoryFolder());
         
@@ -348,17 +328,9 @@ public class GraficoModelLoader {
             reopenEditors(graficoModel[0], openModelIDs);
         }
         
-        // Manifest DEBUG
-        long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Model Loaded from XML in " + (timeEnd-timeStart) + "ms");
-        
         return graficoModel[0];
     }
 
-    // -------------------------------------------------------------------------
-    // Remainder of original code (unchanged)
-    // -------------------------------------------------------------------------
-    
     /**
      * @return The list of resolved objects as a message string or null
      */

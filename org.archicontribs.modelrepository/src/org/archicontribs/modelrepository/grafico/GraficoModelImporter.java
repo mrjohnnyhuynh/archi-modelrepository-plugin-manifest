@@ -77,10 +77,9 @@ public class GraficoModelImporter {
         }
     }
 
-    // Types of changes by GIT DIFF
+    // Track GIT Changes
     public enum ChangeType { ADD, MODIFY, DELETE }
 
-    // Types of GIT changes, with relative git paths.
     public static class ModelChange {
         public final ChangeType type;
         public final String gitPath;
@@ -91,8 +90,10 @@ public class GraficoModelImporter {
         }
     }
     
-	// ID -> Object lookup table
+    // Lookup table of ID -> Object to resolve proxies. Populated at import; updated when applying incremental changes.
     private Map<String, IIdentifier> fIDLookup;
+    
+    // File cache for pre-loading XML files in parallel using NIO
     private Map<File, byte[]> fFileCache;
     
     /**
@@ -141,7 +142,7 @@ public class GraficoModelImporter {
     	// Reset the ID -> Object lookup table
     	fIDLookup = new HashMap<String, IIdentifier>();
     	
-    	// read all XML files in parallel using NIO
+    	// Populate the File Cache: read all XML files in parallel using NIO
     	fFileCache = new ConcurrentHashMap<>();
     	List<Path> xmlPaths = Files.walk(modelFolder.toPath())
     	    .filter(p -> p.toString().endsWith(".xml")) //$NON-NLS-1$
@@ -152,7 +153,7 @@ public class GraficoModelImporter {
     	        fFileCache.put(path.toFile(), Files.readAllBytes(path));
     	    }
     	    catch(IOException ex) {
-    	        ModelRepositoryPlugin.getInstance().getLog().error("Could not pre-load file: " + path, ex); //$NON-NLS-1$
+    	        ModelRepositoryPlugin.getInstance().getLog().error("Could not pre-load file: " + path, ex);
     	    }
     	});
     	
@@ -177,7 +178,7 @@ public class GraficoModelImporter {
             modelCompatibility.fixCompatibility();
         }
         catch(CompatibilityHandlerException ex) {
-            ModelRepositoryPlugin.getInstance().getLog().error("Error loading model", ex); //$NON-NLS-1$
+            ModelRepositoryPlugin.getInstance().getLog().error("Error loading model", ex);
         }
 
     	// We now have to remove the Eobject from its Resource so it can be saved in its proper *.archimate format
@@ -198,22 +199,21 @@ public class GraficoModelImporter {
     }
 
     /**
-     * Apply a list of Git-diff changes to an already-loaded model in-place,
-     * rather than rebuilding the entire model from scratch.
-     *
-     * <p>Image changes (paths starting with {@code images/}) are intentionally
-     * excluded here; the caller ({@link GraficoModelLoader}) handles them via
-     * {@code IArchiveManager} because it already has that reference.</p>
-     *
-     * @param model   The live, already-loaded model to update.
-     * @param changes List of {@link ModelChange} objects from the Git diff.
-     * @throws IOException if any XML file cannot be read.
+     * Apply a list of model changes (e.g. found via git diff) to the given model; in six steps:
+     * 
+     *  1. Track existing IDs and objects 
+     *  2. Separate changes into MODIFYs, Element/Folder DELETEs, Folder/Element ADDs (in that order)
+     *  3. DELETEs – elements first, then folders. Children before parents. i.e. Deepest-first
+     *  4. ADDs – folders first, then element. Parents before children. i.e. Shallow-first
+     *  5. MODIFYs – load the file and copy all EMF features onto the existing live object (to maintain references)
+     *  6. Resolve cross-references 
+     * 
      */
     public void applyChangesToModel(IArchimateModel model, List<ModelChange> changes) throws IOException {
         fModel = model;
         fFileCache = null; // incremental path loads files individually – no bulk pre-load needed
 
-        // Pre-populate fIDLookup with all existing objects in the live model so that proxy resolution works correctly.
+        // 1. Track existing IDs and objects in a lookup table for quick resolution during MODIFY 
         fIDLookup = new HashMap<>();
         fIDLookup.put(model.getId(), model);
         for(IProfile profile : model.getProfiles()) {
@@ -226,10 +226,7 @@ public class GraficoModelImporter {
             }
         }
 
-        // ------------------------------------------------------------------
-        // 2. Partition changes; only process model/ XML files here.
-        //    Images are handled by the caller.
-        // ------------------------------------------------------------------
+        // 2. Separate Changes into MODIFYs, Element/Folder DELETEs, Folder/Element ADDs (in that order)
         List<ModelChange> folderAdds    = new ArrayList<>();
         List<ModelChange> elementAdds   = new ArrayList<>();
         List<ModelChange> modified      = new ArrayList<>();
@@ -253,21 +250,17 @@ public class GraficoModelImporter {
             }
         }
 
-        // ------------------------------------------------------------------
-        // 3. DELETEs – elements first, then folders deepest-first so that
-        //    children are gone before their parent container is removed.
-        // ------------------------------------------------------------------
+        // 3. DELETEs – elements first, then folders. Children before parents. i.e. Deepest-first
         for(ModelChange change : elementDeletes) {
             String id = extractIdFromPath(change.gitPath);
             IIdentifier obj = fIDLookup.remove(id);
             if(obj != null) {
-            	System.err.println("Deleting element: " + change.gitPath);
+            	// System.err.println("Deleting element: " + change.gitPath);
             	EcoreUtil.remove((EObject)obj);
             }
         }
 
-        // Sort folders deletes based on depth. Use '/'. 
-        // Deepest first so that children are deleted before their parent container is removed.
+        // Sort folders, using '/', in reverse, to delete based on depth 
         folderDeletes.sort(Comparator.comparingLong((ModelChange c) -> c.gitPath.chars().filter(ch -> ch == '/').count()).reversed()); 
         
         for(ModelChange change : folderDeletes) {
@@ -276,18 +269,12 @@ public class GraficoModelImporter {
             if(id == null) continue; // top-level folder.xml – should never be deleted
             IIdentifier obj = fIDLookup.remove(id);
             if(obj != null) {
-            	System.err.println("Deleting folder: " + change.gitPath);
+            	// System.err.println("Deleting folder: " + change.gitPath);
                 EcoreUtil.remove((EObject)obj);
             }
         }
 
-        // ------------------------------------------------------------------
-        // 4. ADDs – folder.xml first, shallowest to deepest, so every parent
-        //    folder is in fIDLookup before its children are processed.
-        // ------------------------------------------------------------------
-        
-        // Sort folder adds based on depth. Use '/'. 
-        // Shallow first so that every parent folder is in fIDLookup before its children are processed.
+        // 4. ADDs – folders first, then element. Parents before children. i.e. Shallow-first
         folderAdds.sort(Comparator.comparingLong((ModelChange c) -> c.gitPath.chars().filter(ch -> ch == '/').count()));
 
         for(ModelChange change : folderAdds) {
@@ -295,12 +282,11 @@ public class GraficoModelImporter {
             IFolder newFolder = (IFolder)loadElement(file); // registers in fIDLookup
             IFolder parent = findParentFolder(model, change.gitPath);
             if(parent != null) {
-            	System.err.println("Adding folder: " + change.gitPath + " to parent: " + parent.getName());
+            	// System.err.println("Adding folder: " + change.gitPath + " to parent: " + parent.getName());
                 parent.getFolders().add(newFolder);
             }
             else {
-                ModelRepositoryPlugin.getInstance().getLog().error(
-                    "Could not find parent folder for ADD: " + change.gitPath, null); //$NON-NLS-1$
+                ModelRepositoryPlugin.getInstance().getLog().error("Could not find parent folder for ADD: " + change.gitPath, null);
             }
         }
 
@@ -309,44 +295,33 @@ public class GraficoModelImporter {
             EObject newElement = loadElement(file); // registers in fIDLookup
             IFolder parent = findParentFolder(model, change.gitPath);
             if(parent != null) {
-            	System.err.println("Adding element: " + change.gitPath + " to parent: " + parent.getName());
+            	// System.err.println("Adding element: " + change.gitPath + " to parent: " + parent.getName());
                 parent.getElements().add(newElement);
             }
             else {
-                ModelRepositoryPlugin.getInstance().getLog().error(
-                    "Could not find parent folder for ADD: " + change.gitPath, null); //$NON-NLS-1$
+                ModelRepositoryPlugin.getInstance().getLog().error("Could not find parent folder for ADD: " + change.gitPath, null);
             }
         }
 
-        // ------------------------------------------------------------------
-        // 5. MODIFYs – load the new version of the file and copy all EMF
-        //    features onto the existing live object so that in-memory
-        //    references held by open diagram editors remain valid.
-        // ------------------------------------------------------------------
+        // 5. MODIFYs – load the file and copy all EMF features onto the existing live object (to maintain references)
         for(ModelChange change : modified) {
             File file = new File(fLocalRepoFolder, change.gitPath);
-
-            // Every Grafico XML file — elements, folders, and the model root — carries
-            // an "id" attribute, so extractIdFromXml works universally.
             String id = extractIdFromXml(change.gitPath);
-            System.err.println("Processing MODIFY: " + change.gitPath + " with resolved ID: " + id);
 
             if(id == null) continue;
 
             IIdentifier existing = fIDLookup.get(id);
             if(existing == null) {
-                // Object not found in live model – skip without calling loadElement
-                // to avoid clobbering fIDLookup with a disconnected object.
+            	ModelRepositoryPlugin.getInstance().getLog().error("Could not find existing object for MODIFY: " + change.gitPath, null);
                 continue;
             }
 
             EObject newObj = loadElement(file);
 
             if(existing != newObj) {
-            	System.err.println("Modifying element: " + change.gitPath);
-                // Diagrams are serialised as a single inline tree; copy containment too.
+            	// System.err.println("Modifying element: " + change.gitPath);
                 boolean isDiagram = existing instanceof IDiagramModel;
-                copyAllFeatures(newObj, (EObject)existing, isDiagram);
+                copyAllFeatures(newObj, (EObject)existing);
                 if(isDiagram) {
                     // Re-register new diagram children so resolveProxies() can find them.
                     for(Iterator<EObject> it = ((EObject)existing).eAllContents(); it.hasNext();) {
@@ -356,66 +331,47 @@ public class GraficoModelImporter {
                         }
                     }
                 }
-                fIDLookup.put(id, existing); // restore live object as canonical reference
+                fIDLookup.put(id, existing);
             }
         }
 
-        // ------------------------------------------------------------------
-        // 6. Resolve any proxy cross-references introduced by ADDs/MODIFYs.
-        // ------------------------------------------------------------------
+        // 6 - Resolve cross-references / proxies after all changes are applied
         resolveProxies();
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers for incremental update
-    // -------------------------------------------------------------------------
+    // Helpers for incremental update Start
 
     /**
-     * Copy all non-derived, non-transient, changeable EMF features from
-     * {@code source} to {@code target}.  For many-valued features the target
-     * list is cleared and repopulated.
-     *
-     * <p>When {@code includeContainment} is {@code false}, containment
-     * references are skipped because children of non-diagram elements are
-     * stored as separate Grafico files and are managed by the ADD/DELETE
-     * processing steps instead.</p>
-     *
-     * <p>When {@code includeContainment} is {@code true} (diagram models),
-     * the entire child tree is copied from the freshly-loaded object because
-     * Grafico serialises diagrams as a single inline file — there are no
-     * separate ADD/DELETE entries for diagram children.</p>
-     *
-     * <p>Cross-references copied from a freshly-loaded object will be EMF
-     * proxy objects; {@link #resolveProxies()} is called by the caller after
-     * all modifications are applied.</p>
+     * Copy all non-derived, non-transient, changeable EMF features from source to target.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private void copyAllFeatures(EObject source, EObject target, boolean includeContainment) {
+    private void copyAllFeatures(EObject source, EObject target) {
         for(EStructuralFeature feature : source.eClass().getEAllStructuralFeatures()) {
             if(feature.isDerived() || feature.isTransient() || !feature.isChangeable()) {
-                continue;
-            }
-            // Skip containment references for non-diagram elements — their children
-            // are managed by ADD/DELETE, not by copying from a freshly-loaded parent.
-            if(feature instanceof org.eclipse.emf.ecore.EReference
-                    && ((org.eclipse.emf.ecore.EReference)feature).isContainment()
-                    && !includeContainment) {
                 continue;
             }
             if(feature.isMany()) {
                 EList sourceList = (EList)source.eGet(feature);
                 EList targetList = (EList)target.eGet(feature);
                 targetList.clear();
-                targetList.addAll(sourceList);
+                // Snapshot the source list: for containment features, addAll
+                // moves children (changing their container), which would modify
+                // the live sourceList during iteration without a copy.
+                targetList.addAll(new ArrayList<>(sourceList));
             }
             else {
-                target.eSet(feature, source.eGet(feature));
+                // Preserve the eIsSet state
+                if(source.eIsSet(feature)) {
+                    target.eSet(feature, source.eGet(feature));
+                } else {
+                    target.eUnset(feature);
+                }
             }
         }
     }
  
     /**
-     * Given a relative path XML string, extract the element ID from XML attributes
+     * Given an XML, extract the element ID from the "id" attribute
      */
     private String extractIdFromXml(String gitPath) {
         if (gitPath == null || gitPath.isEmpty() ) {
@@ -450,18 +406,16 @@ public class GraficoModelImporter {
     }
 
     /**
-     * Given a relative path XML string, extract the element ID from the filename
+     * Given an XML, extract the element ID from the filename. 
      */
     private String extractIdFromPath(String gitPath) {
-        // Example: model/business/BusinessActor_1234.xml
         String filename = gitPath.substring(gitPath.lastIndexOf('/') + 1);
         if (filename.endsWith(".xml")) {
             filename = filename.substring(0, filename.length() - 4);
         }
 
-        // Folder XML: folder.xml → ID is the folder name
+        // folder.xml - use parent directory name
         if (filename.equals("folder")) {
-            // folder name is the parent directory
             int slash = gitPath.lastIndexOf('/');
             if (slash > 0) {
                 return gitPath.substring(0, slash).substring(gitPath.substring(0, slash).lastIndexOf('/') + 1);
@@ -469,52 +423,44 @@ public class GraficoModelImporter {
             return null;
         }
 
-        // Element XML: type_id → extract the id after the last underscore
+        // Element XML - use the part after the last underscore
         int idx = filename.lastIndexOf('_');
         return (idx != -1) ? filename.substring(idx + 1) : filename;
     }
 
     /**
-     * Locate the parent {@link IFolder} for a file being added.
+     * Locate the parent folder for a file at the given gitPath.
+     * This is needed for ADD and MODIFY operations to know where to attach the loaded object in the model.
      *
-     * <ul>
-     *   <li>For a regular element ({@code model/Business/abc/elem.xml}) the
-     *       parent is the folder whose directory is {@code abc}.</li>
-     *   <li>For a new sub-folder ({@code model/Business/newId/folder.xml}) the
-     *       parent is the folder whose directory is {@code Business} (we must
-     *       not try to navigate <em>into</em> the not-yet-existing
-     *       {@code newId} directory).</li>
-     * </ul>
-     *
-     * Top-level directory names (Business, Application, …) are matched against
-     * {@link FolderType#toString()} values; nested directory names are folder
-     * IDs looked up in {@code fIDLookup}.
+     * The parent folder is determined by the directory structure of the gitPath:
+     * For a regular element XML file, the parent is the folder whose directory matches the path up to the element file.
+     * For a new folder (identified by folder.xml), the parent is the folder one level up from the new folder's directory, since the new folder itself doesn't exist yet.
      */
     private IFolder findParentFolder(IArchimateModel model, String gitPath) {
         boolean isFolderXml = gitPath.endsWith(IGraficoConstants.FOLDER_XML);
 
-        // Build the "effective directory" path:
-        //   - element:    strip filename  → …/parentDir
-        //   - folder.xml: strip filename AND the folder being added → …/grandparentDir
         String dirPath;
         int lastSlash = gitPath.lastIndexOf('/');
         String withoutFilename = gitPath.substring(0, lastSlash); // strip filename
+        
+        // For folder.xml, strip the folder being added as well to get the parent directory
         if(isFolderXml) {
             int secondLastSlash = withoutFilename.lastIndexOf('/');
-            dirPath = (secondLastSlash >= 0) ? withoutFilename.substring(0, secondLastSlash) : ""; //$NON-NLS-1$
+            dirPath = (secondLastSlash >= 0) ? withoutFilename.substring(0, secondLastSlash) : "";
         }
+        // For element XML, the parent directory is just the path without the filename
         else {
             dirPath = withoutFilename;
         }
 
         if(dirPath.isEmpty()) return null;
 
-        String[] parts = dirPath.split("/"); //$NON-NLS-1$
-        // parts[0] = "model", parts[1] = FolderType name, parts[2..] = sub-folder IDs
+        String[] parts = dirPath.split("/");
 
+        // The first part is the top-level "model" folder, so skip it
         if(parts.length < 2) return null;
 
-        // Resolve top-level folder by FolderType name
+        // The second part is a top-level folder, with a FolderType name
         IFolder folder = null;
         for(IFolder f : model.getFolders()) {
             if(f.getType().toString().equalsIgnoreCase(parts[1])) {
@@ -524,7 +470,7 @@ public class GraficoModelImporter {
         }
         if(folder == null) return null;
 
-        // Navigate nested sub-folders by ID (directory name = folder ID)
+        // walk the sub-folders, the folder names are IDs
         for(int i = 2; i < parts.length; i++) {
             IIdentifier sub = fIDLookup.get(parts[i]);
             if(!(sub instanceof IFolder)) return null;
@@ -533,10 +479,8 @@ public class GraficoModelImporter {
 
         return folder;
     }
-
-    // -------------------------------------------------------------------------
-    // Remainder of original code (unchanged)
-    // -------------------------------------------------------------------------
+    
+    // Helpers for incremental update End
 
     /**
      * @return A list of unresolved objects. Can be null if no unresolved objects
@@ -619,16 +563,27 @@ public class GraficoModelImporter {
     }
 
     /**
-     * Check if 'object' is a proxy. if yes, replace it with real object from mapping table.
+     * Check if 'object' is a proxy or a stale direct reference, and replace it with the canonical object from the mapping table.
+     * 3 Scenarios can cause an object reference to be unresolved:
+     * 
+     *  1. reference is a proxy (i.e. freshly-loaded XML during a full reload)
+     *  2. stale reference to an object that was deleted by a remote commit
+     *  3. stale reference to an object that was replaced by a move (DELETE+ADD)
+     *   
      */
     private EObject resolve(IIdentifier object, IIdentifier parent) {
-        if(object != null && object.eIsProxy()) {
+        if(object == null) {
+            return null;
+        }
+
+        // EMF proxy resolution for full reload: look up the canonical object in the mapping table and return it if found; otherwise add to unresolved list
+        if(object.eIsProxy()) {
             URI objectURI = EcoreUtil.getURI(object);
-            String objectID = EcoreUtil.getURI(object).fragment();
-            
+            String objectID = objectURI.fragment();
+
             // Get proxy object
             IIdentifier newObject = fIDLookup.get(objectID);
-            
+
             // If proxy has not been resolved
             if(newObject == null) {
                 // Add to list
@@ -637,12 +592,20 @@ public class GraficoModelImporter {
                 }
                 fUnresolvedObjects.add(new UnresolvedObject(objectURI, parent));
             }
-            
+
             return newObject == null ? object : newObject;
         }
-        else {
-            return object;
+
+        // Non-proxy, stale reference 
+        // look up the canonical object in the mapping table and return it if found;
+        IIdentifier canonical = fIDLookup.get(object.getId());
+        if(canonical != null && canonical != object) {
+            return canonical;
         }
+
+        // Object was deleted — return the (now-detached) reference as-is.
+        // Any remaining direct references to it are harmless and will be cleaned up on the next full reload.
+        return object;
     }
     
 	private IArchimateModel loadModel(File folder) throws IOException {

@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.authentication.CredentialsAuthenticator;
 import org.archicontribs.modelrepository.authentication.UsernamePassword;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -213,7 +214,6 @@ public class ArchiRepository implements IArchiRepository {
         
         if ( depth > 0 ) {
 			cloneCommand.setDepth(depth);
-			System.err.println("GIT CLONE: depth=" + depth);
 		}
 
         try(Git git = cloneCommand.call()) {
@@ -224,7 +224,6 @@ public class ArchiRepository implements IArchiRepository {
                     throw new IOException("Commit " + commitHash + " is not reachable at depth " + depth 
                         + ". Increase the depth or leave it blank for a full clone.");
                 }
-                System.err.println("GIT CLONE: Resetting to commit " + commitHash);
                 git.reset().setMode(ResetType.HARD).setRef(commitHash).call();
                 git.getRepository().getRefDatabase().refresh();
                 
@@ -320,7 +319,9 @@ public class ArchiRepository implements IArchiRepository {
                             added++;
                         }
                     }
-                    System.err.println("GIT PULL: " + added + " files added/modified, " + removed + " files removed. Manifest updated.");
+                    String msg = String.format("GIT PULL: %d files added/modified, %d files removed. Manifest updated.", added, removed);
+                    System.err.println(msg);
+                    ModelRepositoryPlugin.getInstance().getLog().info(msg);
                 }
                 manifest.save();
             }
@@ -488,7 +489,6 @@ public class ArchiRepository implements IArchiRepository {
                         // Get what was exported and deleted
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
-                        System.err.println("Preparing GIT ADD: " + writtenFiles.size() + "; GIT REMOVE: " + deletedFiles.size());
                         
                         // Check lock file is deleted
                         checkDeleteLockFile();
@@ -556,7 +556,9 @@ public class ArchiRepository implements IArchiRepository {
                         }
                         
                         long timeEnd = System.currentTimeMillis();
-                        System.err.println("GIT operations finished in " + (timeEnd-timeStart) + "ms");
+                        String msg = String.format("Staged changes in Git: %d files added/modified, %d files removed, in %dms.", writtenFiles.size(), deletedFiles.size(), (timeEnd-timeStart));
+                        System.err.println(msg);
+                        ModelRepositoryPlugin.getInstance().getLog().info(msg);
                     }
                     catch(IOException | GitAPIException ex) {
                         exception[0] = ex;
