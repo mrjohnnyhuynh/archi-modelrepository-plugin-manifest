@@ -36,13 +36,19 @@ class RefreshFilesJob extends Job {
      * Preference changed to fetch in background
      */
     private IPropertyChangeListener preferenceChangeListener = event -> {
-        if(IPreferenceConstants.PREFS_SCAN_REPOSITORY_FOLDER == event.getProperty()) {
-            if(event.getNewValue() == Boolean.TRUE) {
-                start();
-            }
-            else {
-                cancel();
-            }
+        switch(event.getProperty()) {
+            case IPreferenceConstants.PREFS_SCAN_REPOSITORY_FOLDER:
+                if(event.getNewValue() == Boolean.TRUE) {
+                    start();
+                }
+                else {
+                    cancel();
+                }
+                break;
+            
+            case IPreferenceConstants.PREFS_REPOSITORY_FOLDER:
+                fViewer.refreshInBackground();
+                break;
         }
     };
 
