@@ -72,10 +72,7 @@ public class ModelRepositoryPlugin extends AbstractUIPlugin {
         String path = getPreferenceStore().getString(IPreferenceConstants.PREFS_REPOSITORY_FOLDER);
         
         if(StringUtils.isSet(path)) {
-            File file = new File(path);
-            if(file.canWrite()) {
-                return file;
-            }
+            return new File(path);
         }
         
         // Default
