@@ -452,7 +452,6 @@ public class ArchiRepository implements IArchiRepository {
 								AddCommand addCommand = git.add();
 								for(Path path : writtenFiles) {
 									addCommand.addFilepattern(repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
-									// System.out.println("Adding to index: " + repoRoot.relativize(path).toString().replace(File.separatorChar, '/'));
 								}
 								addCommand.setUpdate(false);
 								addCommand.call();
