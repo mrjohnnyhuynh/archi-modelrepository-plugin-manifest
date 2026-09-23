@@ -15,7 +15,7 @@ In very large models, here are some areas that may cause performance issues due 
 
 ## Smaller performance enhancements or QoL features
 - Use NIO and batch read XMLs during reload: completed
-- Update the manifest with hashes of newly pulled files (instead of waiting for the next export): TODO
+- Update the manifest with hashes of newly pulled files (instead of waiting for the next export): completed
 - Add Repository (git clone) supports shallow clones and selective commits: completed
 - Prompt for Primary Password before doing any operations (e.g. fail faster): completed
 
