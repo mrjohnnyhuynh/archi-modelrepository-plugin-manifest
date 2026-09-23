@@ -7,6 +7,7 @@ package org.archicontribs.modelrepository;
 
 
 import org.archicontribs.modelrepository.authentication.CryptoDataTests;
+import org.archicontribs.modelrepository.grafico.ArchiRepositoryPullManifestTests;
 import org.archicontribs.modelrepository.grafico.ArchiRepositoryTests;
 import org.archicontribs.modelrepository.grafico.GraficoManifestTests;
 import org.archicontribs.modelrepository.grafico.GraficoModelExporterTests;
@@ -18,6 +19,7 @@ import org.junit.platform.suite.api.SuiteDisplayName;
 @Suite
 @SelectClasses({
     ArchiRepositoryTests.class,
+    ArchiRepositoryPullManifestTests.class,
     GraficoUtilsTests.class,
     GraficoManifestTests.class,
     GraficoModelExporterTests.class,

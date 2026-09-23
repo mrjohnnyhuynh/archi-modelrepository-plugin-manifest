@@ -63,6 +63,7 @@ import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.treewalk.filter.TreeFilter;
 import org.eclipse.ui.PlatformUI;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -271,17 +272,77 @@ public class ArchiRepository implements IArchiRepository {
             
             ObjectId after = git.getRepository().resolve(Constants.HEAD);
             
-            // Pull had changes; update the manifest
+            // Pull had changes (clean fast-forward or merge only; HEAD does not move on conflict);
+            // update the manifest incrementally from the diff instead of rehashing the whole model folder.
             if(!before.equals(after)) {
                 File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
                 Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
-                GraficoManifest manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
+                
+                GraficoManifest manifest;
+                try {
+                    manifest = GraficoManifest.load(modelFolder, manifestPath);
+                    updateManifestFromPullDiff(git.getRepository(), before, after, manifest);
+                }
+                catch(Exception ex) {
+                    // Safety net: any failure applying the incremental diff falls back to a full,
+                    // correct (if slower) rebuild from disk rather than risk a partially-updated manifest.
+                    manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
+                }
                 manifest.save();
             }
             
             return result;
         }
     }
+
+    /**
+     * Apply the set of changed model XML files between two commits to a manifest,
+     * hashing bytes from the current working tree (not the Git blob) so that the
+     * manifest reflects any checkout-time EOL/filter transformations.
+     * 
+     * Package-visible for unit testing.
+     * 
+     * @param repository the repository to diff
+     * @param before the commit HEAD pointed to before the pull
+     * @param after the commit HEAD points to after the pull
+     * @param manifest the manifest to update in place (its root determines where changed files are read from)
+     * @throws IOException if a changed file cannot be read from disk
+     */
+    static void updateManifestFromPullDiff(Repository repository, ObjectId before, ObjectId after,
+            GraficoManifest manifest) throws IOException {
+        String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
+        
+        try(RevWalk rw = new RevWalk(repository);
+            TreeWalk tw = new TreeWalk(repository)) {
+            
+            tw.addTree(rw.parseCommit(before).getTree());
+            tw.addTree(rw.parseCommit(after).getTree());
+            tw.setFilter(TreeFilter.ANY_DIFF);
+            tw.setRecursive(true);
+            
+            while(tw.next()) {
+                String path = tw.getPathString();
+                if(!path.startsWith(modelPrefix) || !path.endsWith(".xml")) continue;
+                String relPath = path.substring(modelPrefix.length());
+                
+                if(tw.getObjectId(1).equals(ObjectId.zeroId())) {
+                    manifest.remove(relPath);
+                }
+                else {
+                    Path diskPath = manifest.resolveKey(relPath);
+                    if(!Files.exists(diskPath)) {
+                        // Working tree does not have the file the diff expects; treat as removed
+                        // rather than leave a stale/incorrect hash in the manifest.
+                        manifest.remove(relPath);
+                    }
+                    else {
+                        manifest.put(relPath, Files.readAllBytes(diskPath));
+                    }
+                }
+            }
+        }
+    }
+
 
     @Override
     public FetchResult fetchFromRemote(UsernamePassword npw, ProgressMonitor monitor, boolean isDryrun) throws IOException, GitAPIException {
