@@ -18,6 +18,8 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.archicontribs.modelrepository.ModelRepositoryPlugin;
 import org.archicontribs.modelrepository.preferences.IPreferenceConstants;
@@ -62,11 +64,15 @@ public class GraficoModelExporter {
 	
     // Use a ProgressMonitor to cancel running Jobs and track Exception
     private static class ExceptionProgressMonitor extends NullProgressMonitor {
-        IOException ex;
+        private final AtomicReference<IOException> exception = new AtomicReference<>();
         
         void catchException(IOException ex) {
-            this.ex = ex;
+            exception.compareAndSet(null, ex);
             setCanceled(true); // Cancel running job on exception
+        }
+
+        IOException getException() {
+            return exception.get();
         }
     }
     
@@ -86,8 +92,8 @@ public class GraficoModelExporter {
     private File fLocalRepoFolder;
     
     // Manifest data structures
-    private final Set<Path> writtenFiles = new HashSet<>();
-    private final Set<Path> deletedFiles = new HashSet<>();
+    private final Set<Path> writtenFiles = ConcurrentHashMap.newKeySet();
+    private final Set<Path> deletedFiles = ConcurrentHashMap.newKeySet();
     
     public Set<Path> getWrittenFiles() {
     	return writtenFiles;
@@ -217,8 +223,18 @@ public class GraficoModelExporter {
         try {
             jobgroup.join(0, pm);
         }
-        catch(OperationCanceledException | InterruptedException ex) {
-            ex.printStackTrace();
+        catch(OperationCanceledException ex) {
+            if(pm.getException() == null) {
+                throw new IOException("Grafico export was canceled.", ex); //$NON-NLS-1$
+            }
+        }
+        catch(InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Grafico export was interrupted.", ex); //$NON-NLS-1$
+        }
+
+        if(pm.getException() != null) {
+            throw pm.getException();
         }
 
         // Use old manifest to find and delete files no longer present
@@ -240,11 +256,6 @@ public class GraficoModelExporter {
 
         // save new manifest
         newManifest.save();
-
-        // Throw on any exception
-        if(pm.ex != null) {
-            throw pm.ex;
-        }
     }
     
     /**

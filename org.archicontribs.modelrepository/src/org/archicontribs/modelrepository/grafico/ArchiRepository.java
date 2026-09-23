@@ -32,9 +32,6 @@ import org.eclipse.jgit.api.AddCommand;
 import org.eclipse.jgit.api.CleanCommand;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.CommitCommand;
-import org.eclipse.jgit.dircache.DirCache;
-import org.eclipse.jgit.dircache.DirCacheEditor;
-import org.eclipse.jgit.dircache.DirCacheEntry;
 import org.eclipse.jgit.api.FetchCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.InitCommand;
@@ -50,7 +47,6 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.PersonIdent;
@@ -521,43 +517,7 @@ public class ArchiRepository implements IArchiRepository {
 	                        	rmCommand.call();
 	                        }
 	                        
-	                        // Normalize index to avoid unnecessary commits
-	                        Status status = git.status().call();
-	                        Set<String> modified = status.getModified();
-	                        Set<String> missing = status.getMissing();
-	                        Set<String> removed = status.getRemoved();
-
-                            DirCache dc = git.getRepository().lockDirCache();
-                            DirCacheEditor editor = dc.editor();
-
-                            for (String path : modified) {
-
-                                // Skip files that do not exist in the working tree
-                                if (missing.contains(path) || removed.contains(path)) {
-                                    continue;
-                                }
-
-                                // Skip if the file does not exist or is not a regular file
-                                Path p = repoRoot.resolve(path).normalize();
-                                if (!Files.exists(p) || !Files.isRegularFile(p)) {
-                                    continue;
-                                }
-
-                                editor.add(new DirCacheEditor.PathEdit(path) {
-                                    @Override
-                                    public void apply(DirCacheEntry entry) {
-                                        try {
-                                            entry.setLastModified(Files.getLastModifiedTime(p).toInstant());
-                                            entry.setLength(Files.size(p));
-                                            entry.setFileMode(FileMode.REGULAR_FILE);
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(e);
-                                        }
-                                    }
-                                });
-                            }
-                            editor.commit();
-                        }
+	                        }
                         
                         long timeEnd = System.currentTimeMillis();
                         System.err.println("GIT operations finished in " + (timeEnd-timeStart) + "ms");

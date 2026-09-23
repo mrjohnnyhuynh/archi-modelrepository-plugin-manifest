@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
 /**
  * Manages the Grafico manifest file (.grafico_manifest).
@@ -79,7 +81,20 @@ public class GraficoManifest {
         List<String> lines = sorted.entrySet().stream()
                 .map(e -> e.getKey() + "=" + e.getValue()) //$NON-NLS-1$
                 .toList();
-        Files.write(manifestFile.toPath(), lines);
+        Path target = manifestFile.toPath();
+        Path temporary = Files.createTempFile(target.getParent(), MANIFEST_NAME, ".tmp"); //$NON-NLS-1$
+        try {
+            Files.write(temporary, lines);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            }
+            catch(java.nio.file.AtomicMoveNotSupportedException ex) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        finally {
+            Files.deleteIfExists(temporary);
+        }
         System.err.println("MANIFEST Saved: " + sorted.size() + " entries to " + manifestFile.getAbsolutePath());
     }
 
@@ -96,18 +111,34 @@ public class GraficoManifest {
     public static GraficoManifest buildFromDisk(File modelFolder) throws IOException {
         GraficoManifest manifest = new GraficoManifest(modelFolder);
         Path base = modelFolder.toPath();
-        Files.walk(base)
-             .filter(p -> p.toString().endsWith(".xml")) //$NON-NLS-1$
-             .forEach(p -> {
-                 try {
-                     String relPath = base.relativize(p).toString().replace(File.separatorChar, '/');
-                     manifest.entries.put(relPath, md5(Files.readAllBytes(p)));
-                 }
-                 catch(IOException ex) {
-                     throw new RuntimeException(ex);
-                 }
-             });
+        try(Stream<Path> paths = Files.walk(base)) {
+            paths.filter(p -> p.toString().endsWith(".xml")) //$NON-NLS-1$
+                 .forEach(p -> {
+                     try {
+                         String relPath = base.relativize(p).toString().replace(File.separatorChar, '/');
+                         manifest.entries.put(relPath, md5(Files.readAllBytes(p)));
+                     }
+                     catch(IOException ex) {
+                         throw new ManifestBuildException(ex);
+                     }
+                 });
+        }
+        catch(ManifestBuildException ex) {
+            throw ex.getCause();
+        }
         return manifest;
+    }
+
+    private static class ManifestBuildException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        ManifestBuildException(IOException cause) {
+            super(cause);
+        }
+
+        IOException getCause() {
+            return (IOException)super.getCause();
+        }
     }
 
     /**
