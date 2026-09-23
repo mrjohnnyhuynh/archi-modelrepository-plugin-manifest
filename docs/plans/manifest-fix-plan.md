@@ -40,41 +40,41 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 
 ### Phase 1 — Eliminate data-loss and concurrency hazards first (complete)
 
-- [ ] Remove or harden the `DirCacheEntry` index-stat normalization in
+- [x] Remove or harden the `DirCacheEntry` index-stat normalization in
       `ArchiRepository.exportModelToGraficoFiles` (Finding 1). Prefer deleting
       it; if retained, only refresh metadata after a byte-for-byte compare of
       working-tree file vs. indexed blob.
-- [ ] Make `GraficoModelExporter.exportModel` transactional (Finding 2):
+- [x] Make `GraficoModelExporter.exportModel` transactional (Finding 2):
       collect all worker failures first; abort before the deletion loop and
       before `manifest.save()` if any write failed.
-- [ ] Replace `writtenFiles` (`HashSet<Path>`) with a thread-safe set
+- [x] Replace `writtenFiles` (`HashSet<Path>`) with a thread-safe set
       (`ConcurrentHashMap.newKeySet()`), and replace `ExceptionProgressMonitor.ex`
       with an atomic/synchronized failure holder (Finding 3).
-- [ ] Make `GraficoManifest.save()` atomic: write to a temp file in the same
+- [x] Make `GraficoManifest.save()` atomic: write to a temp file in the same
       directory, then atomic move into place (Finding E, part 1).
 
 ### Phase 2 — Block unsafe file deletion / path traversal (complete)
 
-- [ ] Add a single manifest-key validation/canonicalization helper: reject
+- [x] Add a single manifest-key validation/canonicalization helper: reject
       absolute paths, `.`/`..` segments, backslashes, non-`.xml` entries;
       require the resolved path to remain under the model root (Finding A).
       Apply it in `GraficoManifest.load` and before the deletion loop in
       `GraficoModelExporter`.
-- [ ] Constrain `saveImages()` image paths to remain inside `<repo>/images`
+- [x] Constrain `saveImages()` image paths to remain inside `<repo>/images`
       after normalization; reject absolute/traversal/symlink-escape paths
       (Finding D).
-- [ ] Stop auto-deleting `index.lock` in `checkDeleteLockFile()`; surface lock
+- [x] Stop auto-deleting `index.lock` in `checkDeleteLockFile()`; surface lock
       contention as a user-visible error instead (Finding C).
 
 ### Phase 3 — Relocate the manifest cache out of the tracked worktree (complete)
 
-- [ ] Change `GraficoManifest` to accept an explicit manifest file `Path`
+- [x] Change `GraficoManifest` to accept an explicit manifest file `Path`
       instead of deriving it from the model folder.
-- [ ] Store the manifest under Git metadata (e.g. via
+- [x] Store the manifest under Git metadata (e.g. via
       `Repository.getDirectory()`), not `<worktree>/model/.grafico_manifest`
       (Finding 5).
-- [ ] Add `model/.grafico_manifest` to `.gitignore` as a defensive fallback.
-- [ ] Write a migration note/step: `git rm --cached model/.grafico_manifest`
+- [x] Add `model/.grafico_manifest` to `.gitignore` as a defensive fallback.
+- [x] Write a migration note/step: `git rm --cached model/.grafico_manifest`
       for already-tracked legacy files, then delete the obsolete worktree
       cache file.
 - [x] Re-verify `resetToRef()` behavior once the manifest lives outside the
@@ -82,29 +82,29 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 
 ### Phase 4 — Fix clone/pull manifest rebuild inputs (complete)
 
-- [ ] Filter pull-driven manifest updates to `.xml` under `model/` only,
+- [x] Filter pull-driven manifest updates to `.xml` under `model/` only,
       matching clone behavior (Finding B).
-- [ ] Rebuild the manifest from actual working-tree bytes after
+- [x] Rebuild the manifest from actual working-tree bytes after
       checkout/merge in `cloneModel`/`pullFromRemote`, instead of hashing Git
       blob bytes directly (Finding 4). Reuse/fix `GraficoManifest.buildFromDisk()`
       (wrap `Files.walk` in try-with-resources, propagate errors) (Finding E,
       part 2).
-- [ ] Re-check the interaction with Phase 1's index-normalization fix now that
+- [x] Re-check the interaction with Phase 1's index-normalization fix now that
       manifest generation is disk-based.
 
 ### Phase 5 — Performance, cleanup, and lower-severity hardening (complete)
 
-- [ ] Reuse serialized bytes from the hashing pass when writing changed
+- [x] Reuse serialized bytes from the hashing pass when writing changed
       resources, avoiding double EMF serialization (Finding 6).
 - [x] Decide and document the scope of image export optimization: explicitly
       extend manifest hashing to images, or explicitly document that only
       model XML is optimized (Finding 7).
-- [ ] Null-check `file.list()` in `GraficoUtils.getUniqueLocalFolder` (Finding 8).
-- [ ] Remove the unused `Git` instance in
+- [x] Null-check `file.list()` in `GraficoUtils.getUniqueLocalFolder` (Finding 8).
+- [x] Remove the unused `Git` instance in
       `ArchiRepository.getWorkingTreeFileContents` (Finding 9).
-- [ ] Gate `System.err.println` debug logging behind a flag or a proper
+- [x] Gate `System.err.println` debug logging behind a flag or a proper
       plugin logging facility (Finding 10).
-- [ ] Harden SSH host-key handling in `SSHCredentialsProvider` (Finding F):
+- [x] Harden SSH host-key handling in `SSHCredentialsProvider` (Finding F):
       replace blanket "yes" answers with explicit verification/user
       confirmation.
 
