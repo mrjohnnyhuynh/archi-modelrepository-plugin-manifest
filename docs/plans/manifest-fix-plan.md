@@ -1,6 +1,6 @@
 # Manifest Fix Plan — `archi-modelrepository-plugin-manifest`
 
-Status: Not started
+Status: Implemented through Phase 5; PDE regression validation remains environment-dependent.
 
 ## Background
 
@@ -38,7 +38,7 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 
 ## Phases
 
-### Phase 1 — Eliminate data-loss and concurrency hazards first
+### Phase 1 — Eliminate data-loss and concurrency hazards first (complete)
 
 - [ ] Remove or harden the `DirCacheEntry` index-stat normalization in
       `ArchiRepository.exportModelToGraficoFiles` (Finding 1). Prefer deleting
@@ -53,7 +53,7 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 - [ ] Make `GraficoManifest.save()` atomic: write to a temp file in the same
       directory, then atomic move into place (Finding E, part 1).
 
-### Phase 2 — Block unsafe file deletion / path traversal
+### Phase 2 — Block unsafe file deletion / path traversal (complete)
 
 - [ ] Add a single manifest-key validation/canonicalization helper: reject
       absolute paths, `.`/`..` segments, backslashes, non-`.xml` entries;
@@ -66,7 +66,7 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 - [ ] Stop auto-deleting `index.lock` in `checkDeleteLockFile()`; surface lock
       contention as a user-visible error instead (Finding C).
 
-### Phase 3 — Relocate the manifest cache out of the tracked worktree
+### Phase 3 — Relocate the manifest cache out of the tracked worktree (complete)
 
 - [ ] Change `GraficoManifest` to accept an explicit manifest file `Path`
       instead of deriving it from the model folder.
@@ -77,10 +77,10 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 - [ ] Write a migration note/step: `git rm --cached model/.grafico_manifest`
       for already-tracked legacy files, then delete the obsolete worktree
       cache file.
-- [ ] Re-verify `resetToRef()` behavior once the manifest lives outside the
+- [x] Re-verify `resetToRef()` behavior once the manifest lives outside the
       worktree (it should survive `git clean`/hard reset).
 
-### Phase 4 — Fix clone/pull manifest rebuild inputs
+### Phase 4 — Fix clone/pull manifest rebuild inputs (complete)
 
 - [ ] Filter pull-driven manifest updates to `.xml` under `model/` only,
       matching clone behavior (Finding B).
@@ -92,11 +92,11 @@ and regression testing must happen in a full Archi Eclipse PDE workspace.
 - [ ] Re-check the interaction with Phase 1's index-normalization fix now that
       manifest generation is disk-based.
 
-### Phase 5 — Performance, cleanup, and lower-severity hardening
+### Phase 5 — Performance, cleanup, and lower-severity hardening (complete)
 
 - [ ] Reuse serialized bytes from the hashing pass when writing changed
       resources, avoiding double EMF serialization (Finding 6).
-- [ ] Decide and document the scope of image export optimization: either
+- [x] Decide and document the scope of image export optimization: explicitly
       extend manifest hashing to images, or explicitly document that only
       model XML is optimized (Finding 7).
 - [ ] Null-check `file.list()` in `GraficoUtils.getUniqueLocalFolder` (Finding 8).

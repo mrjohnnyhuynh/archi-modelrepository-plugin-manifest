@@ -63,7 +63,6 @@ import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
-import org.eclipse.jgit.treewalk.filter.TreeFilter;
 import org.eclipse.ui.PlatformUI;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -211,7 +210,6 @@ public class ArchiRepository implements IArchiRepository {
         
         if ( depth > 0 ) {
 			cloneCommand.setDepth(depth);
-			System.err.println("GIT CLONE: depth=" + depth);
 		}
 
         try(Git git = cloneCommand.call()) {
@@ -222,7 +220,6 @@ public class ArchiRepository implements IArchiRepository {
                     throw new IOException("Commit " + commitHash + " is not reachable at depth " + depth 
                         + ". Increase the depth or leave it blank for a full clone.");
                 }
-                System.err.println("GIT CLONE: Resetting to commit " + commitHash);
                 git.reset().setMode(ResetType.HARD).setRef(commitHash).call();
                 git.getRepository().getRefDatabase().refresh();
                 
@@ -239,7 +236,6 @@ public class ArchiRepository implements IArchiRepository {
             
             // Build the manifest from the git object store (not from disk) 
             File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
-            String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
             Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
             GraficoManifest manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
             manifest.save();
@@ -278,31 +274,8 @@ public class ArchiRepository implements IArchiRepository {
             // Pull had changes; update the manifest
             if(!before.equals(after)) {
                 File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
-                String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
                 Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
-                Repository repo = git.getRepository();
-                try(RevWalk rw = new RevWalk(repo);
-                    TreeWalk tw = new TreeWalk(repo)) {
-                    
-                    tw.addTree(rw.parseCommit(before).getTree());
-                    tw.addTree(rw.parseCommit(after).getTree());
-                    tw.setFilter(TreeFilter.ANY_DIFF);
-                    tw.setRecursive(true);
-                    
-                    int removed = 0;
-                    int added = 0;
-                    while(tw.next()) {
-                        String path = tw.getPathString();
-                        if(!path.startsWith(modelPrefix) || !path.endsWith(".xml")) continue;
-                        if(tw.getObjectId(1).equals(ObjectId.zeroId())) {
-                            removed++;
-                        } else {
-                            added++;
-                        }
-                    }
-                    System.err.println("GIT PULL: " + added + " files added/modified, " + removed + " files removed. Manifest updated.");
-                }
-                manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
+                GraficoManifest manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
                 manifest.save();
             }
             
@@ -386,12 +359,10 @@ public class ArchiRepository implements IArchiRepository {
     public String getWorkingTreeFileContents(String path) throws IOException {
         String str = "";
         
-        try(Git git = Git.open(getLocalRepositoryFolder())) {
-            try(BufferedReader in = new BufferedReader(new FileReader(new File(getLocalRepositoryFolder(), path)))) {
-                String line;
-                while((line = in.readLine()) != null) {
-                    str += line + "\n";
-                }
+        try(BufferedReader in = new BufferedReader(new FileReader(new File(getLocalRepositoryFolder(), path)))) {
+            String line;
+            while((line = in.readLine()) != null) {
+                str += line + "\n";
             }
         }
         
@@ -465,12 +436,9 @@ public class ArchiRepository implements IArchiRepository {
                         GraficoModelExporter exporter = new GraficoModelExporter(model, getLocalRepositoryFolder());
                         exporter.exportModel();
 
-                        long timeStart = System.currentTimeMillis();
-
                         // Get what was exported and deleted
                         Set<Path> writtenFiles = exporter.getWrittenFiles();
                         Set<Path> deletedFiles = exporter.getDeletedFiles();
-                        System.err.println("Preparing GIT ADD: " + writtenFiles.size() + "; GIT REMOVE: " + deletedFiles.size());
                         
                         // Check lock file is deleted
                         checkDeleteLockFile();
@@ -501,8 +469,6 @@ public class ArchiRepository implements IArchiRepository {
 	                        
 	                        }
                         
-                        long timeEnd = System.currentTimeMillis();
-                        System.err.println("GIT operations finished in " + (timeEnd-timeStart) + "ms");
                     }
                     catch(IOException | GitAPIException ex) {
                         exception[0] = ex;

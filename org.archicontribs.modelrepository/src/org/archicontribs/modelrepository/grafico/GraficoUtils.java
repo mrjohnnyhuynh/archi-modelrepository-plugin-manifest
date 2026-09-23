@@ -103,11 +103,16 @@ public class GraficoUtils {
         int count = 1;
         File file = new File(parentFolder, folderName);
         
-        while(file.exists() && file.isDirectory() && file.list().length > 0) {
+        while(file.exists() && file.isDirectory() && hasEntries(file)) {
             file = new File(parentFolder, folderName + "_" + count++); //$NON-NLS-1$
         }
         
         return file;
+    }
+
+    private static boolean hasEntries(File folder) {
+        String[] entries = folder.list();
+        return entries != null && entries.length > 0;
     }
     
     /**

@@ -63,8 +63,6 @@ public class GraficoModelLoader {
         fRestoredObjects = null;
         
         // DEBUG - time how long it takes to load the model from Grafico files
-        long timeStart = System.currentTimeMillis();
-        
         // Import Grafico Model
         GraficoModelImporter importer = new GraficoModelImporter(fRepository.getLocalRepositoryFolder());
         
@@ -111,8 +109,6 @@ public class GraficoModelLoader {
         }
         
         // Manifest DEBUG
-        long timeEnd = System.currentTimeMillis();
-        System.err.println("*** Model Loaded from XML in " + (timeEnd-timeStart) + "ms");
         
         return graficoModel[0];
     }

@@ -127,8 +127,6 @@ public class GraficoModelExporter {
     public void exportModel() throws IOException {
 
     	// Manifest DEBUG
-        long timeStart = System.currentTimeMillis();
-
         // Define target folders for model and images
         File modelFolder = new File(fLocalRepoFolder, IGraficoConstants.MODEL_FOLDER);
 
@@ -141,6 +139,7 @@ public class GraficoModelExporter {
 
         // Tracks if a resource should be exported (true) or skipped (false) 
         HashMap<Resource,Boolean> exportMap = new HashMap<>();
+        HashMap<Resource,byte[]> serializedResources = new HashMap<>();
 
         // Delete images and re-create them (remark: FileUtils.deleteFolder() does sanity checks)
         File imagesFolder = new File(fLocalRepoFolder, IGraficoConstants.IMAGES_FOLDER);
@@ -169,6 +168,7 @@ public class GraficoModelExporter {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             resource.save(baos, null);
             byte[] data = baos.toByteArray();
+            serializedResources.put(resource, data);
 
             // Compute relative path (for the manifest key)
             Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
@@ -204,11 +204,13 @@ public class GraficoModelExporter {
                 @Override
                 protected IStatus run(IProgressMonitor monitor) {
                     try {
-                        resource.save(null);
                         Path filePath = Paths.get(converter.normalize(resource.getURI()).toFileString());
                         if (!filePath.isAbsolute()) {
 							filePath = modelFolder.toPath().resolve(filePath).normalize();
 						}
+                        Files.createDirectories(filePath.getParent());
+                        Files.write(filePath, serializedResources.get(resource), StandardOpenOption.CREATE,
+                                StandardOpenOption.TRUNCATE_EXISTING);
                         writtenFiles.add(filePath);
                     }
                     catch(IOException ex) {
@@ -254,9 +256,6 @@ public class GraficoModelExporter {
         }
 
         // Manifest DEBUG
-        long timeEnd = System.currentTimeMillis();
-        System.err.println("Model Exported " + exported + ", Skipped " + skipped + ", Deleted " + deleted + ", in " + (timeEnd-timeStart) + "ms");
-
         // save new manifest
         newManifest.save();
     }
@@ -365,6 +364,7 @@ public class GraficoModelExporter {
                 String imagePath = imageProvider.getImagePath();
                 
                 if(imagePath != null && !saved.contains(imagePath)) {
+                    Path file = validateImagePath(imagePath);
                     byte[] bytes = archiveManager.getBytesFromEntry(imagePath);
                     
                     if(bytes == null) {
@@ -372,7 +372,6 @@ public class GraficoModelExporter {
                         ModelRepositoryPlugin.getInstance().getLog().error("Could not get image bytes from image path: " + imagePath, new IOException()); //$NON-NLS-1$
                     }
                     else {
-                        Path file = validateImagePath(imagePath);
                         try {
                             Files.createDirectories(file.getParent());
                             Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);

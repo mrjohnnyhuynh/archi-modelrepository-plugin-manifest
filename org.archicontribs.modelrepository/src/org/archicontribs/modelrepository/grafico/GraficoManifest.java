@@ -100,7 +100,6 @@ public class GraficoManifest {
                 }
             }
         }
-        System.err.println("MANIFEST Loaded: " + manifest.size() + " entries from " + source.toAbsolutePath());
         return manifest;
     }
 
@@ -134,7 +133,6 @@ public class GraficoManifest {
         finally {
             Files.deleteIfExists(temporary);
         }
-        System.err.println("MANIFEST Saved: " + sorted.size() + " entries to " + target);
     }
 
     /**
@@ -180,7 +178,8 @@ public class GraficoManifest {
             super(cause);
         }
 
-        IOException getCause() {
+        @Override
+        public IOException getCause() {
             return (IOException)super.getCause();
         }
     }

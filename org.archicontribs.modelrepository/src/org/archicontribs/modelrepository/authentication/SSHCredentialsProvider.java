@@ -27,7 +27,11 @@ public class SSHCredentialsProvider extends CredentialsProvider {
 
     @Override
     public boolean supports(CredentialItem... items) {
-        // This is never called
+        for(CredentialItem item : items) {
+            if(item instanceof CredentialItem.YesNoType) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -36,7 +40,7 @@ public class SSHCredentialsProvider extends CredentialsProvider {
         for(CredentialItem item : items) {
             // For verifying and storing the key in the known_hosts file
             if(item instanceof CredentialItem.YesNoType) {
-                ((CredentialItem.YesNoType)item).setValue(true);
+                throw new UnsupportedCredentialItem(uri, "SSH host-key verification requires explicit confirmation."); //$NON-NLS-1$
             }
             // Password for ssh file
             else if(item instanceof CredentialItem.Password) {
