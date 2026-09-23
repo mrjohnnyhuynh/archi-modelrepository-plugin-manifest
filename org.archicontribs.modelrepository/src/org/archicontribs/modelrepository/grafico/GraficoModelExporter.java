@@ -389,7 +389,8 @@ public class GraficoModelExporter {
         }
     }
 
-    private Path validateImagePath(String imagePath) throws IOException {
+    // Package-visible (not private) so it can be unit tested directly.
+    Path validateImagePath(String imagePath) throws IOException {
         Path imagesRoot = fLocalRepoFolder.toPath().resolve(IGraficoConstants.IMAGES_FOLDER)
                 .toAbsolutePath().normalize();
         Path relative;
