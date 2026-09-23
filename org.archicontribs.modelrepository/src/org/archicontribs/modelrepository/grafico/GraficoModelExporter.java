@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -132,8 +133,9 @@ public class GraficoModelExporter {
         File modelFolder = new File(fLocalRepoFolder, IGraficoConstants.MODEL_FOLDER);
 
         // Use a Manifest to avoid deleting and rebuilding the model 
-        GraficoManifest oldManifest = GraficoManifest.load(modelFolder);
-        GraficoManifest newManifest = new GraficoManifest(modelFolder);
+        Path manifestPath = fLocalRepoFolder.toPath().resolve(".git").resolve(GraficoManifest.MANIFEST_NAME); //$NON-NLS-1$
+        GraficoManifest oldManifest = GraficoManifest.load(modelFolder, manifestPath);
+        GraficoManifest newManifest = new GraficoManifest(modelFolder.toPath(), manifestPath);
         int skipped = 0;
         int exported = 0;
 
@@ -241,11 +243,12 @@ public class GraficoModelExporter {
         int deleted = 0;
         for (String oldFile : oldManifest.keySet()) {
             if (!newManifest.containsKey(oldFile)) {
-                File f = new File(modelFolder, oldFile);
-                if (f.exists()) {
+                Path path = oldManifest.resolveKey(oldFile);
+                File f = path.toFile();
+                if (Files.exists(path) && !Files.isDirectory(path)) {
                 	deleted++;
-                    f.delete();
-                    deletedFiles.add(f.toPath());
+                    Files.delete(path);
+                    deletedFiles.add(path);
                 }
             }
         }
@@ -347,7 +350,7 @@ public class GraficoModelExporter {
     /**
      * Extract and save images used inside a model as separate image files
      */
-    private void saveImages() {
+    private void saveImages() throws IOException {
         Set<String> saved = new HashSet<>(); // Check don't save more than once
 
         IArchiveManager archiveManager = (IArchiveManager)fModel.getAdapter(IArchiveManager.class);
@@ -369,9 +372,10 @@ public class GraficoModelExporter {
                         ModelRepositoryPlugin.getInstance().getLog().error("Could not get image bytes from image path: " + imagePath, new IOException()); //$NON-NLS-1$
                     }
                     else {
+                        Path file = validateImagePath(imagePath);
                         try {
-                            File file = new File(fLocalRepoFolder, imagePath);
-                            Files.write(file.toPath(), bytes, StandardOpenOption.CREATE);
+                            Files.createDirectories(file.getParent());
+                            Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
                         }
                         // Catch exception here and continue on to next image
                         // Don't fail saving the model because of an image
@@ -384,6 +388,31 @@ public class GraficoModelExporter {
                 }
             }
         }
+    }
+
+    private Path validateImagePath(String imagePath) throws IOException {
+        Path imagesRoot = fLocalRepoFolder.toPath().resolve(IGraficoConstants.IMAGES_FOLDER)
+                .toAbsolutePath().normalize();
+        Path relative;
+        try {
+            relative = Paths.get(imagePath);
+        }
+        catch(java.nio.file.InvalidPathException ex) {
+            throw new IOException("Invalid image path: " + imagePath, ex); //$NON-NLS-1$
+        }
+        if(relative.isAbsolute() || imagePath.indexOf('\\') >= 0) {
+            throw new IOException("Image path must be relative to the images folder: " + imagePath); //$NON-NLS-1$
+        }
+        Path file = imagesRoot.resolve(relative).normalize();
+        if(!file.startsWith(imagesRoot)) {
+            throw new IOException("Image path escapes the images folder: " + imagePath); //$NON-NLS-1$
+        }
+        for(Path current = file; current != null && current.startsWith(imagesRoot); current = current.getParent()) {
+            if(Files.isSymbolicLink(current)) {
+                throw new IOException("Image path contains a symbolic link: " + imagePath); //$NON-NLS-1$
+            }
+        }
+        return file;
     }
     
 }

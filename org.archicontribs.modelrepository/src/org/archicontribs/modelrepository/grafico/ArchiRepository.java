@@ -240,22 +240,8 @@ public class ArchiRepository implements IArchiRepository {
             // Build the manifest from the git object store (not from disk) 
             File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
             String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
-            GraficoManifest manifest = new GraficoManifest(modelFolder);
-
-            Repository repo = git.getRepository();
-            try(RevWalk rw = new RevWalk(repo);
-                TreeWalk tw = new TreeWalk(repo)) {
-                
-                tw.addTree(rw.parseCommit(repo.resolve(Constants.HEAD)).getTree());
-                tw.setRecursive(true);
-                
-                while(tw.next()) {
-                    String path = tw.getPathString();
-                    if(!path.startsWith(modelPrefix) || !path.endsWith(".xml")) continue;
-                    String relPath = path.substring(modelPrefix.length());
-                    manifest.put(relPath, repo.open(tw.getObjectId(0)).getBytes());
-                }
-            }
+            Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
+            GraficoManifest manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
             manifest.save();
         }
     }
@@ -293,8 +279,7 @@ public class ArchiRepository implements IArchiRepository {
             if(!before.equals(after)) {
                 File modelFolder = new File(getLocalRepositoryFolder(), IGraficoConstants.MODEL_FOLDER);
                 String modelPrefix = IGraficoConstants.MODEL_FOLDER + "/";
-                GraficoManifest manifest = GraficoManifest.load(modelFolder);
-                
+                Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
                 Repository repo = git.getRepository();
                 try(RevWalk rw = new RevWalk(repo);
                     TreeWalk tw = new TreeWalk(repo)) {
@@ -308,19 +293,16 @@ public class ArchiRepository implements IArchiRepository {
                     int added = 0;
                     while(tw.next()) {
                         String path = tw.getPathString();
-                        if(!path.startsWith(modelPrefix)) continue;
-                        String relPath = path.substring(modelPrefix.length());
-                        
+                        if(!path.startsWith(modelPrefix) || !path.endsWith(".xml")) continue;
                         if(tw.getObjectId(1).equals(ObjectId.zeroId())) {
-                            manifest.remove(relPath);
                             removed++;
                         } else {
-                            manifest.put(relPath, repo.open(tw.getObjectId(1)).getBytes());
                             added++;
                         }
                     }
                     System.err.println("GIT PULL: " + added + " files added/modified, " + removed + " files removed. Manifest updated.");
                 }
+                manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
                 manifest.save();
             }
             
@@ -734,10 +716,10 @@ public class ArchiRepository implements IArchiRepository {
     /**
      * In some cases the lock file exists and leads to an error, so we delete it
      */
-    private void checkDeleteLockFile() {
+    private void checkDeleteLockFile() throws IOException {
         File lockFile = new File(getLocalGitFolder(), "index.lock");
         if(lockFile.exists() && lockFile.canWrite()) {
-            lockFile.delete();
+            throw new IOException("Git index is locked by another process: " + lockFile.getAbsolutePath()); //$NON-NLS-1$
         }
     }
     
