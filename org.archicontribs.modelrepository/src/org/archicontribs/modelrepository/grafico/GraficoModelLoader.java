@@ -5,23 +5,13 @@
  */
 package org.archicontribs.modelrepository.grafico;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import org.archicontribs.modelrepository.grafico.GraficoModelImporter.UnresolvedObject;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.util.EcoreUtil;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ObjectLoader;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.swt.custom.BusyIndicator;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorInput;
@@ -53,7 +43,7 @@ public class GraficoModelLoader {
     public GraficoModelLoader(IArchiRepository repository) {
         fRepository = repository;
     }
-    
+
     /**
      * Load the model
      * @return
@@ -92,9 +82,9 @@ public class GraficoModelLoader {
         // Resolve missing objects
         List<UnresolvedObject> unresolvedObjects = importer.getUnresolvedObjects();
         if(unresolvedObjects != null) {
-            graficoModel[0] = restoreProblemObjects(unresolvedObjects);
+            deleteProblemObjects(unresolvedObjects, graficoModel[0]);
         }
-        
+
         // Save it
         IEditorModelManager.INSTANCE.saveModel(graficoModel[0]);
         
@@ -135,106 +125,62 @@ public class GraficoModelLoader {
     }
     
     /**
-     * Find the problem object xml files from the commit history and restore them
-     * @param unresolvedObjects 
-     * @return
+     * Remove diagram objects/references whose underlying model concept could not be resolved
+     * (a "dangling" cross-file reference), and re-export so the Grafico files on disk reflect
+     * the cleaned-up model.
+     * <p>
+     * This used to instead search the ENTIRE commit history for a file matching the missing
+     * object's file name and blindly copy its bytes back into the working tree ("resurrecting"
+     * it). That was unsafe: a dangling reference can be left behind long after the referenced
+     * object was legitimately deleted (e.g. deleting an element but not the diagram objects that
+     * still pointed at it), and on the next import that stale reference would cause the deleted
+     * object - and anything else sharing its file name - to reappear from history, producing a
+     * large, unexpected diff and a "phantom" commit prompt on the next Refresh. Removing the
+     * dangling reference instead is safe and matches what the user actually intended (the object
+     * really was deleted).
+     * @param unresolvedObjects
+     * @param model
      * @throws IOException
      */
-    private IArchimateModel restoreProblemObjects(List<UnresolvedObject> unresolvedObjects) throws IOException {
+    private void deleteProblemObjects(List<UnresolvedObject> unresolvedObjects, IArchimateModel model) throws IOException {
         fRestoredObjects = new ArrayList<IIdentifier>();
         
-        List<String> restoredIdentifiers = new ArrayList<String>();
+        List<String> removedParentIDs = new ArrayList<String>();
+        boolean modelChanged = false;
         
-        try(Repository repository = Git.open(fRepository.getLocalRepositoryFolder()).getRepository()) {
-            try(RevWalk revWalk = new RevWalk(repository)) {
-                for(UnresolvedObject unresolved : unresolvedObjects) {
-                    String missingFileName = unresolved.missingObjectURI.lastSegment();
-                    String missingObjectID = unresolved.missingObjectURI.fragment();
-                    
-                    // Already got this one
-                    if(restoredIdentifiers.contains(missingObjectID)) {
-                        continue;
-                    }
-                    
-                    boolean found = false;
-                    
-                    // Reset RevWalk
-                    revWalk.reset();
-                    ObjectId id = repository.resolve(IGraficoConstants.HEAD);
-                    if(id != null) {
-                        revWalk.markStart(revWalk.parseCommit(id)); 
-                    }
-                    
-                    // Iterate all commits
-                    for(RevCommit commit : revWalk ) {
-                        try(TreeWalk treeWalk = new TreeWalk(repository)) {
-                            treeWalk.addTree(commit.getTree());
-                            treeWalk.setRecursive(true);
-                            
-                            // Iterate through all files
-                            // We can't use a PathFilter for the file name as its path is not correct
-                            while(!found && treeWalk.next()) {
-                                // File is found
-                                if(treeWalk.getPathString().endsWith(missingFileName)) {
-                                    // Save file
-                                    ObjectId objectId = treeWalk.getObjectId(0);
-                                    ObjectLoader loader = repository.open(objectId);
-
-                                    File file = new File(fRepository.getLocalRepositoryFolder(), treeWalk.getPathString());
-                                    file.getParentFile().mkdirs();
-                                    
-                                    try(FileOutputStream out = new FileOutputStream(file)) {
-                                        loader.copyTo(out);
-                                    }
-                                    
-                                    restoredIdentifiers.add(missingObjectID);
-                                    found = true;
-                                }
-                            }
-                        }
-                        
-                        if(found) {
-                            break;
-                        }
-                    }
-                }
-                
-                revWalk.dispose();
-            }
-        }
-        
-        // Then re-import
-        GraficoModelImporter importer = new GraficoModelImporter(fRepository.getLocalRepositoryFolder());
-        IArchimateModel graficoModel = importer.importAsModel();
-        graficoModel.setFile(fRepository.getTempModelFile()); // do this again
-        
-        // Collect restored objects
-        for(Iterator<EObject> iter = graficoModel.eAllContents(); iter.hasNext();) {
-            EObject element = iter.next();
-            for(String id : restoredIdentifiers) {
-                if(element instanceof IIdentifier && id.equals(((IIdentifier)element).getId())) {
-                    fRestoredObjects.add((IIdentifier)element);
-                }
-            }
-        }
-        
-        return graficoModel;
-    }
-
-    @SuppressWarnings("unused")
-    private void deleteProblemObjects(List<UnresolvedObject> unresolvedObjects, IArchimateModel model) throws IOException {
         for(UnresolvedObject unresolved : unresolvedObjects) {
+            // Some unresolved references (e.g. a single dangling profile entry) are already
+            // fixed up in-place by the importer itself, since removing their recorded
+            // parentObject entirely would be far more destructive than necessary. Nothing
+            // more to remove here, but the model did change and still needs re-exporting.
+            if(unresolved.handledDuringImport) {
+                modelChanged = true;
+                continue;
+            }
+            
             String parentID = unresolved.parentObject.getId();
+            
+            // Already removed this one
+            if(removedParentIDs.contains(parentID)) {
+                continue;
+            }
             
             EObject eObject = ArchimateModelUtils.getObjectByID(model, parentID);
             if(eObject != null) {
+                if(eObject instanceof IIdentifier) {
+                    fRestoredObjects.add((IIdentifier)eObject);
+                }
                 EcoreUtil.remove(eObject);
+                removedParentIDs.add(parentID);
+                modelChanged = true;
             }
         }
         
-        // And re-export to grafico xml files
-        GraficoModelExporter exporter = new GraficoModelExporter(model, fRepository.getLocalRepositoryFolder());
-        exporter.exportModel();
+        // Re-export to Grafico xml files so the dangling reference is actually removed on disk
+        if(modelChanged) {
+            GraficoModelExporter exporter = new GraficoModelExporter(model, fRepository.getLocalRepositoryFolder());
+            exporter.exportModel();
+        }
     }
 
     /**

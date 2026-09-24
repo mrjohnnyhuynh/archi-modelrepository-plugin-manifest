@@ -36,6 +36,7 @@ import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateConnection;
+import com.archimatetool.model.IDiagramModelArchimateComponent;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelReference;
 import com.archimatetool.model.IFolder;
@@ -63,10 +64,21 @@ public class GraficoModelImporter {
     static class UnresolvedObject {
         URI missingObjectURI;
         IIdentifier parentObject;
+        /**
+         * True if the importer has already fixed up the dangling reference itself in-place
+         * (e.g. dropping a single unresolved profile entry from its concept's profile list)
+         * rather than deferring full removal of parentObject to the caller.
+         */
+        boolean handledDuringImport;
 
         UnresolvedObject(URI missingObjectURI, IIdentifier parentObject) {
+            this(missingObjectURI, parentObject, false);
+        }
+
+        UnresolvedObject(URI missingObjectURI, IIdentifier parentObject, boolean handledDuringImport) {
             this.missingObjectURI = missingObjectURI;
             this.parentObject = parentObject;
+            this.handledDuringImport = handledDuringImport;
         }
     }
     
@@ -227,7 +239,21 @@ public class GraficoModelImporter {
 	            	ListIterator<IProfile> iterator = profiles.listIterator();
 	            	while(iterator.hasNext()) {
 	            		IProfile profile = iterator.next();
-	            		iterator.set((IProfile)resolve(profile, concept));
+	            		int unresolvedCountBefore = fUnresolvedObjects == null ? 0 : fUnresolvedObjects.size();
+	            		IProfile resolved = (IProfile)resolve(profile, concept);
+	            		boolean wasUnresolved = fUnresolvedObjects != null && fUnresolvedObjects.size() > unresolvedCountBefore;
+	            		if(wasUnresolved) {
+	            		    // A missing profile is a dangling reference on this single list
+	            		    // entry only. Removing the whole concept (the recorded parentObject)
+	            		    // because it lost a style/tag would be far too destructive, so drop
+	            		    // just the broken profile reference here and mark it as already
+	            		    // handled so the caller doesn't also try to remove the concept.
+	            		    fUnresolvedObjects.get(fUnresolvedObjects.size() - 1).handledDuringImport = true;
+	            		    iterator.remove();
+	            		}
+	            		else {
+	            		    iterator.set(resolved);
+	            		}
 	            	}
             	}
             }
@@ -252,6 +278,44 @@ public class GraficoModelImporter {
                 // Resolve proxies for Model References
                 IDiagramModelReference element = (IDiagramModelReference)eObject;
                 element.setReferencedModel((IDiagramModel)resolve(element.getReferencedModel(), element));
+            }
+        }
+
+        // A diagram connection stores both its visual endpoints and a reference
+        // to the model relationship. Once all proxies have been resolved, make
+        // the relationship ends agree with those visual endpoints before the
+        // model is validated or serialized.
+        //
+        // Deliberately not using IDiagramModelConnection#reconnect() here: its
+        // default implementation also re-adds the connection to its source/target
+        // connection lists (source.addConnection()/target.addConnection()), which
+        // mutates the diagram's containment tree. Doing that during import - before
+        // the resource is fully settled - was observed to corrupt later
+        // serialization (same-document connections were written out as verbose
+        // cross-file href references instead of plain same-document id attributes).
+        // Only the relationship endpoint sync is needed here, so it is replicated
+        // directly without the connection list side effect.
+        for(Iterator<EObject> iter = fModel.eAllContents(); iter.hasNext();) {
+            EObject eObject = iter.next();
+            if(eObject instanceof IDiagramModelArchimateConnection connection
+                    && connection.getSource() instanceof IDiagramModelArchimateComponent sourceComponent
+                    && connection.getTarget() instanceof IDiagramModelArchimateComponent targetComponent
+                    && connection.getArchimateRelationship() != null) {
+                IArchimateConcept sourceConcept = sourceComponent.getArchimateConcept();
+                IArchimateConcept targetConcept = targetComponent.getArchimateConcept();
+
+                // If either endpoint's concept is still an unresolved proxy (its
+                // reference could not be found in this Grafico checkout), do not
+                // write it onto the relationship: the relationship is the model's
+                // canonical source of truth and may be shared by several diagrams,
+                // so overwriting a good endpoint with a dangling proxy here would
+                // corrupt the relationship for every other diagram that uses it.
+                if(sourceConcept == null || sourceConcept.eIsProxy() || targetConcept == null || targetConcept.eIsProxy()) {
+                    continue;
+                }
+
+                connection.getArchimateRelationship().setSource(sourceConcept);
+                connection.getArchimateRelationship().setTarget(targetConcept);
             }
         }
     }

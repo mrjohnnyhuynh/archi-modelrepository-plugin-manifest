@@ -130,7 +130,7 @@ public class GraficoManifestTests {
     public void load_FallsBackToLegacyModelFolderManifest() throws Exception {
         File modelFolder = newModelFolder();
         Path legacy = modelFolder.toPath().resolve(GraficoManifest.MANIFEST_NAME);
-        Files.writeString(legacy, "Folder_1.xml=ABCDEF");
+        Files.writeString(legacy, GraficoManifest.FORMAT_HEADER + "\nFolder_1.xml=ABCDEF");
 
         Path newLocation = modelFolder.toPath().getParent().resolve(".git-manifest-new");
         GraficoManifest manifest = GraficoManifest.load(modelFolder, newLocation);
@@ -139,10 +139,21 @@ public class GraficoManifestTests {
     }
 
     @Test
+    public void load_IgnoresPreviousFormatToForceSafeRegeneration() throws Exception {
+        File modelFolder = newModelFolder();
+        Path manifestFile = modelFolder.toPath().resolve(".git-manifest-test");
+        Files.writeString(manifestFile, "Folder_1.xml=ABCDEF");
+
+        GraficoManifest manifest = GraficoManifest.load(modelFolder, manifestFile);
+
+        assertEquals(0, manifest.size());
+    }
+
+    @Test
     public void load_RejectsMalformedEntryLine() throws Exception {
         File modelFolder = newModelFolder();
         Path manifestFile = modelFolder.toPath().resolve(".git-manifest-test");
-        Files.writeString(manifestFile, "not-a-valid-line-without-equals");
+        Files.writeString(manifestFile, GraficoManifest.FORMAT_HEADER + "\nnot-a-valid-line-without-equals");
 
         assertThrows(IOException.class, () -> GraficoManifest.load(modelFolder, manifestFile));
     }
@@ -151,7 +162,7 @@ public class GraficoManifestTests {
     public void load_RejectsTraversalKeyInManifestFile() throws Exception {
         File modelFolder = newModelFolder();
         Path manifestFile = modelFolder.toPath().resolve(".git-manifest-test");
-        Files.writeString(manifestFile, "../outside.xml=ABCDEF");
+        Files.writeString(manifestFile, GraficoManifest.FORMAT_HEADER + "\n../outside.xml=ABCDEF");
 
         assertThrows(IOException.class, () -> GraficoManifest.load(modelFolder, manifestFile));
     }

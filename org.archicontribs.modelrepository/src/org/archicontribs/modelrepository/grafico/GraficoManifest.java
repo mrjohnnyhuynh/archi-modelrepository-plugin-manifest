@@ -35,6 +35,7 @@ import java.util.stream.Stream;
 public class GraficoManifest {
 
     public static final String MANIFEST_NAME = ".grafico_manifest";
+    static final String FORMAT_HEADER = "# grafico-manifest-v2"; //$NON-NLS-1$
 
     private final Path fModelRoot;
     private final Path fManifestFile;
@@ -73,6 +74,32 @@ public class GraficoManifest {
     }
 
     /**
+     * Check whether an existing manifest file at the given path is in the current
+     * versioned format. Returns {@code false} both when the file doesn't exist and
+     * when it exists but predates {@link #FORMAT_HEADER} (or is otherwise unreadable) -
+     * callers that need to distinguish "no manifest yet" from "stale/legacy manifest
+     * present" should check {@link Files#exists(Path, java.nio.file.LinkOption...)}
+     * themselves first.
+     * 
+     * This is intended for callers - such as an incremental pull update - that must
+     * not silently persist a manifest which only partially reflects the on-disk
+     * model state; they should fall back to a full {@link #buildFromDisk} rebuild
+     * when this returns {@code false} for a manifest file that already exists.
+     */
+    public static boolean isCurrentFormat(Path manifestFile) {
+        if(!Files.exists(manifestFile)) {
+            return false;
+        }
+        try {
+            List<String> lines = Files.readAllLines(manifestFile);
+            return !lines.isEmpty() && FORMAT_HEADER.equals(lines.get(0));
+        }
+        catch(IOException ex) {
+            return false;
+        }
+    }
+
+    /**
      * Load a manifest from an explicit storage path.
      */
     public static GraficoManifest load(File modelFolder, Path manifestFile) throws IOException {
@@ -83,7 +110,13 @@ public class GraficoManifest {
             source = legacy;
         }
         if(Files.exists(source)) {
-            for(String line : Files.readAllLines(source)) {
+            List<String> lines = Files.readAllLines(source);
+            // Pre-v2 manifests may describe files produced by the former concurrent
+            // second serialization, so force one complete, safe regeneration.
+            if(lines.isEmpty() || !FORMAT_HEADER.equals(lines.get(0))) {
+                return manifest;
+            }
+            for(String line : lines.subList(1, lines.size())) {
                 String[] kv = line.split("=", 2); //$NON-NLS-1$
                 if(kv.length == 2) {
                     try {
@@ -111,8 +144,9 @@ public class GraficoManifest {
      */
     public void save() throws IOException {
         Map<String, String> sorted = new TreeMap<>(entries);
-        List<String> lines = sorted.entrySet().stream()
-                .map(e -> e.getKey() + "=" + e.getValue()) //$NON-NLS-1$
+        List<String> lines = Stream.concat(
+                Stream.of(FORMAT_HEADER),
+                sorted.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue())) //$NON-NLS-1$
                 .toList();
         Path target = fManifestFile;
         Path parent = target.getParent();

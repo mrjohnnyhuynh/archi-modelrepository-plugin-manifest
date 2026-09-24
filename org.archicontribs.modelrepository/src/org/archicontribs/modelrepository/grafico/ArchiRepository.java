@@ -279,14 +279,25 @@ public class ArchiRepository implements IArchiRepository {
                 Path manifestPath = git.getRepository().getDirectory().toPath().resolve(GraficoManifest.MANIFEST_NAME);
                 
                 GraficoManifest manifest;
-                try {
-                    manifest = GraficoManifest.load(modelFolder, manifestPath);
-                    updateManifestFromPullDiff(git.getRepository(), before, after, manifest);
-                }
-                catch(Exception ex) {
-                    // Safety net: any failure applying the incremental diff falls back to a full,
-                    // correct (if slower) rebuild from disk rather than risk a partially-updated manifest.
+                // A manifest file that exists but predates the current format cannot be
+                // trusted to describe every on-disk file (e.g. one written by a pre-fix
+                // build). Patching it incrementally would only cover files touched by
+                // this pull and silently persist an incomplete manifest under the new
+                // header, so treat that case the same as any other incremental-update
+                // failure and rebuild fully from disk instead.
+                if(Files.exists(manifestPath) && !GraficoManifest.isCurrentFormat(manifestPath)) {
                     manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
+                }
+                else {
+                    try {
+                        manifest = GraficoManifest.load(modelFolder, manifestPath);
+                        updateManifestFromPullDiff(git.getRepository(), before, after, manifest);
+                    }
+                    catch(Exception ex) {
+                        // Safety net: any failure applying the incremental diff falls back to a full,
+                        // correct (if slower) rebuild from disk rather than risk a partially-updated manifest.
+                        manifest = GraficoManifest.buildFromDisk(modelFolder, manifestPath);
+                    }
                 }
                 manifest.save();
             }
@@ -526,7 +537,6 @@ public class ArchiRepository implements IArchiRepository {
 								}
 	                        	rmCommand.call();
 	                        }
-	                        
 	                        }
                         
                     }

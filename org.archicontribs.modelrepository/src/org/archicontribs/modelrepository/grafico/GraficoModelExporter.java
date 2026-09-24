@@ -8,11 +8,12 @@ package org.archicontribs.modelrepository.grafico;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -208,9 +209,7 @@ public class GraficoModelExporter {
                         if (!filePath.isAbsolute()) {
 							filePath = modelFolder.toPath().resolve(filePath).normalize();
 						}
-                        Files.createDirectories(filePath.getParent());
-                        Files.write(filePath, serializedResources.get(resource), StandardOpenOption.CREATE,
-                                StandardOpenOption.TRUNCATE_EXISTING);
+                        writeAtomically(filePath, serializedResources.get(resource));
                         writtenFiles.add(filePath);
                     }
                     catch(IOException ex) {
@@ -258,6 +257,28 @@ public class GraficoModelExporter {
         // Manifest DEBUG
         // save new manifest
         newManifest.save();
+    }
+
+    static void writeAtomically(Path file, byte[] data) throws IOException {
+        Path parent = file.getParent();
+        if(parent == null) {
+            throw new IOException("Grafico resource path has no parent directory: " + file); //$NON-NLS-1$
+        }
+
+        Files.createDirectories(parent);
+        Path temporary = Files.createTempFile(parent, ".grafico-", ".tmp"); //$NON-NLS-1$ //$NON-NLS-2$
+        try {
+            Files.write(temporary, data, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try {
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            }
+            catch(AtomicMoveNotSupportedException ex) {
+                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        finally {
+            Files.deleteIfExists(temporary);
+        }
     }
     
     /**
@@ -391,8 +412,14 @@ public class GraficoModelExporter {
 
     // Package-visible (not private) so it can be unit tested directly.
     Path validateImagePath(String imagePath) throws IOException {
-        Path imagesRoot = fLocalRepoFolder.toPath().resolve(IGraficoConstants.IMAGES_FOLDER)
-                .toAbsolutePath().normalize();
+        // imagePath is an IArchiveManager entry key, always of the form "images/<name>"
+        // (see com.archimatetool.editor.model.impl.ArchiveManager) - it already includes
+        // the images/ prefix, so it must be resolved against the repo root, not against
+        // the images folder itself. Resolving it under the images folder (as an earlier
+        // version of this check did) silently wrote every image one directory too deep
+        // (images/images/<name>), which the importer never looks for.
+        Path repoRoot = fLocalRepoFolder.toPath().toAbsolutePath().normalize();
+        Path imagesRoot = repoRoot.resolve(IGraficoConstants.IMAGES_FOLDER).normalize();
         Path relative;
         try {
             relative = Paths.get(imagePath);
@@ -403,7 +430,7 @@ public class GraficoModelExporter {
         if(relative.isAbsolute() || imagePath.indexOf('\\') >= 0) {
             throw new IOException("Image path must be relative to the images folder: " + imagePath); //$NON-NLS-1$
         }
-        Path file = imagesRoot.resolve(relative).normalize();
+        Path file = repoRoot.resolve(relative).normalize();
         if(!file.startsWith(imagesRoot)) {
             throw new IOException("Image path escapes the images folder: " + imagePath); //$NON-NLS-1$
         }
